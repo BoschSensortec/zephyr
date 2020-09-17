@@ -63,21 +63,14 @@ void z_smp_release_global_lock(struct k_thread *thread)
 #if CONFIG_MP_NUM_CPUS > 1
 static FUNC_NORETURN void smp_init_top(void *arg)
 {
-	atomic_t *start_flag = arg;
+	atomic_t *cpu_start_flag = arg;
+	struct k_thread dummy_thread;
 
 	/* Wait for the signal to begin scheduling */
-	while (!atomic_get(start_flag)) {
+	while (!atomic_get(cpu_start_flag)) {
 	}
 
-	/* Switch out of a dummy thread.  Trick cribbed from the main
-	 * thread init.  Should probably unify implementations.
-	 */
-	struct k_thread dummy_thread = {
-		.base.user_options = K_ESSENTIAL,
-		.base.thread_state = _THREAD_DUMMY,
-	};
-
-	arch_curr_cpu()->current = &dummy_thread;
+	z_dummy_thread_init(&dummy_thread);
 	smp_timer_init();
 	z_swap_unlocked();
 

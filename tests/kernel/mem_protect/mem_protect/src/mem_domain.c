@@ -17,18 +17,18 @@ struct k_thread mem_domain_1_tid, mem_domain_2_tid, mem_domain_6_tid;
 
 /****************************************************************************/
 /* The mem domains needed.*/
-u8_t MEM_DOMAIN_ALIGNMENT mem_domain_buf[MEM_REGION_ALLOC];
-u8_t MEM_DOMAIN_ALIGNMENT mem_domain_buf1[MEM_REGION_ALLOC];
+uint8_t MEM_DOMAIN_ALIGNMENT mem_domain_buf[MEM_REGION_ALLOC];
+uint8_t MEM_DOMAIN_ALIGNMENT mem_domain_buf1[MEM_REGION_ALLOC];
 
 /* partitions added later in the test cases.*/
-u8_t MEM_DOMAIN_ALIGNMENT mem_domain_tc3_part1[MEM_REGION_ALLOC];
-u8_t MEM_DOMAIN_ALIGNMENT mem_domain_tc3_part2[MEM_REGION_ALLOC];
-u8_t MEM_DOMAIN_ALIGNMENT mem_domain_tc3_part3[MEM_REGION_ALLOC];
-u8_t MEM_DOMAIN_ALIGNMENT mem_domain_tc3_part4[MEM_REGION_ALLOC];
-u8_t MEM_DOMAIN_ALIGNMENT mem_domain_tc3_part5[MEM_REGION_ALLOC];
-u8_t MEM_DOMAIN_ALIGNMENT mem_domain_tc3_part6[MEM_REGION_ALLOC];
-u8_t MEM_DOMAIN_ALIGNMENT mem_domain_tc3_part7[MEM_REGION_ALLOC];
-u8_t MEM_DOMAIN_ALIGNMENT mem_domain_tc3_part8[MEM_REGION_ALLOC];
+uint8_t MEM_DOMAIN_ALIGNMENT mem_domain_tc3_part1[MEM_REGION_ALLOC];
+uint8_t MEM_DOMAIN_ALIGNMENT mem_domain_tc3_part2[MEM_REGION_ALLOC];
+uint8_t MEM_DOMAIN_ALIGNMENT mem_domain_tc3_part3[MEM_REGION_ALLOC];
+uint8_t MEM_DOMAIN_ALIGNMENT mem_domain_tc3_part4[MEM_REGION_ALLOC];
+uint8_t MEM_DOMAIN_ALIGNMENT mem_domain_tc3_part5[MEM_REGION_ALLOC];
+uint8_t MEM_DOMAIN_ALIGNMENT mem_domain_tc3_part6[MEM_REGION_ALLOC];
+uint8_t MEM_DOMAIN_ALIGNMENT mem_domain_tc3_part7[MEM_REGION_ALLOC];
+uint8_t MEM_DOMAIN_ALIGNMENT mem_domain_tc3_part8[MEM_REGION_ALLOC];
 
 K_MEM_PARTITION_DEFINE(mem_domain_memory_partition,
 		       mem_domain_buf,
@@ -75,21 +75,20 @@ static inline void set_valid_fault_value(int test_case_number)
 {
 	switch (test_case_number) {
 	case 1:
-		valid_fault = false;
+		set_fault_valid(false);
 		break;
 	case 2:
-		valid_fault = true;
+		set_fault_valid(true);
 		break;
 	default:
-		valid_fault = false;
+		set_fault_valid(false);
 		break;
 	}
-	USERSPACE_BARRIER;
 }
 
 /****************************************************************************/
 /* Userspace function */
-void mem_domain_for_user(void *tc_number, void *p2, void *p3)
+static void mem_domain_for_user(void *tc_number, void *p2, void *p3)
 {
 	set_valid_fault_value((int)(uintptr_t)tc_number);
 
@@ -101,12 +100,10 @@ void mem_domain_for_user(void *tc_number, void *p2, void *p3)
 	}
 }
 
-
-void mem_domain_test_1(void *tc_number, void *p2, void *p3)
+static void mem_domain_test_1(void *tc_number, void *p2, void *p3)
 {
 	if ((uintptr_t)tc_number == 1U) {
 		mem_domain_buf[0] = 10U;
-		k_mem_domain_remove_thread(k_current_get());
 		k_mem_domain_add_thread(&mem_domain_mem_domain,
 					k_current_get());
 	}
@@ -123,7 +120,7 @@ void mem_domain_test_1(void *tc_number, void *p2, void *p3)
  *
  * @see k_mem_domain_init()
  */
-void test_mem_domain_valid_access(void *p1, void *p2, void *p3)
+void test_mem_domain_valid_access(void)
 {
 	uintptr_t tc_number = 1U;
 
@@ -136,8 +133,7 @@ void test_mem_domain_valid_access(void *p1, void *p2, void *p3)
 			(void *)tc_number, NULL, NULL,
 			10, 0, K_NO_WAIT);
 
-	k_sem_take(&sync_sem, SYNC_SEM_TIMEOUT);
-
+	k_thread_join(&mem_domain_1_tid, K_FOREVER);
 }
 
 /****************************************************************************/
@@ -149,7 +145,7 @@ void test_mem_domain_valid_access(void *p1, void *p2, void *p3)
  *
  * @ingroup kernel_memprotect_tests
  */
-void test_mem_domain_invalid_access(void *p1, void *p2, void *p3)
+void test_mem_domain_invalid_access(void)
 {
 	uintptr_t tc_number = 2U;
 
@@ -160,15 +156,14 @@ void test_mem_domain_invalid_access(void *p1, void *p2, void *p3)
 			(void *)tc_number, NULL, NULL,
 			10, 0, K_NO_WAIT);
 
-	k_sem_take(&sync_sem, SYNC_SEM_TIMEOUT);
+	k_thread_join(&mem_domain_2_tid, K_FOREVER);
 }
 /***************************************************************************/
 static void thread_entry_rw(void *p1, void *p2, void *p3)
 {
-	valid_fault = false;
-	USERSPACE_BARRIER;
+	set_fault_valid(false);
 
-	u8_t read_data = mem_domain_buf[0];
+	uint8_t read_data = mem_domain_buf[0];
 
 	/* Just to avoid compiler warnings */
 	(void) read_data;
@@ -193,7 +188,6 @@ void test_mem_domain_partitions_user_rw(void)
 			  ARRAY_SIZE(mem_domain_memory_partition_array),
 			  mem_domain_memory_partition_array);
 
-	k_mem_domain_remove_thread(k_current_get());
 	k_mem_domain_add_thread(&mem_domain_mem_domain,
 				k_current_get());
 
@@ -202,11 +196,10 @@ void test_mem_domain_partitions_user_rw(void)
 /****************************************************************************/
 static void user_thread_entry_ro(void *p1, void *p2, void *p3)
 {
-	valid_fault = true;
-	USERSPACE_BARRIER;
+	set_fault_valid(true);
 
 	/* Read the partition */
-	u8_t read_data = mem_domain_buf1[0];
+	uint8_t read_data = mem_domain_buf1[0];
 
 	/* Just to avoid compiler warning */
 	(void) read_data;
@@ -235,7 +228,6 @@ void test_mem_domain_partitions_user_ro(void)
 	k_mem_domain_init(&mem_domain1,
 			  ARRAY_SIZE(mem_domain_memory_partition_array1),
 			  mem_domain_memory_partition_array1);
-	k_mem_domain_remove_thread(k_current_get());
 
 	k_mem_domain_add_thread(&mem_domain1, k_current_get());
 
@@ -253,7 +245,6 @@ void test_mem_domain_partitions_supervisor_rw(void)
 	k_mem_domain_init(&mem_domain_mem_domain,
 			  ARRAY_SIZE(mem_domain_memory_partition_array1),
 			  mem_domain_memory_partition_array1);
-	k_mem_domain_remove_thread(k_current_get());
 
 	k_mem_domain_add_thread(&mem_domain_mem_domain, k_current_get());
 
@@ -262,7 +253,7 @@ void test_mem_domain_partitions_supervisor_rw(void)
 			MEM_DOMAIN_STACK_SIZE, (k_thread_entry_t)thread_entry_rw,
 			NULL, NULL, NULL, 10, K_INHERIT_PERMS, K_NO_WAIT);
 
-	k_sem_take(&sync_sem, SYNC_SEM_TIMEOUT);
+	k_thread_join(&mem_domain_1_tid, K_FOREVER);
 }
 
 /****************************************************************************/
@@ -309,7 +300,7 @@ K_MEM_PARTITION_DEFINE(mem_domain_tc3_part8_struct,
 		       K_MEM_PARTITION_P_RW_U_RW);
 
 
-struct k_mem_partition *mem_domain_tc3_partition_array[] = {
+static struct k_mem_partition *mem_domain_tc3_partition_array[] = {
 	&ztest_mem_partition,
 	&mem_domain_tc3_part1_struct,
 	&mem_domain_tc3_part2_struct,
@@ -321,14 +312,13 @@ struct k_mem_partition *mem_domain_tc3_partition_array[] = {
 	&mem_domain_tc3_part8_struct
 };
 
-struct k_mem_domain mem_domain_tc3_mem_domain;
+static struct k_mem_domain mem_domain_tc3_mem_domain;
 
-void mem_domain_for_user_tc3(void *max_partitions, void *p2, void *p3)
+static void mem_domain_for_user_tc3(void *max_partitions, void *p2, void *p3)
 {
 	uintptr_t index;
 
-	valid_fault = true;
-	USERSPACE_BARRIER;
+	set_fault_valid(true);
 
 	/* fault should be hit on the first index itself. */
 	for (index = 0U;
@@ -352,15 +342,13 @@ void mem_domain_for_user_tc3(void *max_partitions, void *p2, void *p3)
  *
  * @ingroup kernel_memprotect_tests
  */
-void test_mem_domain_add_partitions_invalid(void *p1, void *p2, void *p3)
+void test_mem_domain_add_partitions_invalid(void)
 {
 	/* Subtract one since the domain is initialized with one partition
 	 * already present.
 	 */
-	u8_t max_partitions = (u8_t)arch_mem_domain_max_partitions_get() - 1;
-	u8_t index;
-
-	k_mem_domain_remove_thread(k_current_get());
+	uint8_t max_partitions = (uint8_t)arch_mem_domain_max_partitions_get() - 1;
+	uint8_t index;
 
 	mem_domain_init();
 	k_mem_domain_init(&mem_domain_tc3_mem_domain,
@@ -373,15 +361,13 @@ void test_mem_domain_add_partitions_invalid(void *p1, void *p2, void *p3)
 					   [index]);
 
 	}
-	/* The next add_thread and remove_thread is done so that the
+	/* The next add_thread is done so that the
 	 * memory domain for mem_domain_tc3_mem_domain partitions are
 	 * initialized. Because the pages/regions will not be configuired for
 	 * the partitions in mem_domain_tc3_mem_domain when do a add_partition.
 	 */
 	k_mem_domain_add_thread(&mem_domain_tc3_mem_domain,
 				k_current_get());
-
-	k_mem_domain_remove_thread(k_current_get());
 
 	/* configure a different memory domain for the current thread. */
 	k_mem_domain_add_thread(&mem_domain_mem_domain,
@@ -395,12 +381,11 @@ void test_mem_domain_add_partitions_invalid(void *p1, void *p2, void *p3)
 }
 
 /****************************************************************************/
-void mem_domain_for_user_tc4(void *max_partitions, void *p2, void *p3)
+static void mem_domain_for_user_tc4(void *max_partitions, void *p2, void *p3)
 {
 	uintptr_t index;
 
-	valid_fault = false;
-	USERSPACE_BARRIER;
+	set_fault_valid(false);
 
 	for (index = 0U; (index < (uintptr_t)p2) && (index < 8); index++) {
 		*(uintptr_t *)mem_domain_tc3_partition_array[index]->start =
@@ -419,16 +404,17 @@ void mem_domain_for_user_tc4(void *max_partitions, void *p2, void *p3)
  * @see k_mem_domain_init(), k_mem_domain_add_partition(),
  * k_mem_domain_add_thread(), k_thread_user_mode_enter()
  */
-void test_mem_domain_add_partitions_simple(void *p1, void *p2, void *p3)
+void test_mem_domain_add_partitions_simple(void)
 {
 
-	u8_t max_partitions = (u8_t)arch_mem_domain_max_partitions_get();
-	u8_t index;
+	uint8_t max_partitions = (uint8_t)arch_mem_domain_max_partitions_get();
+	uint8_t index;
 
 	k_mem_domain_init(&mem_domain_tc3_mem_domain,
 			  1,
 			  mem_domain_tc3_partition_array);
 
+	/* Add additional partitions up to the max permitted number. */
 	for (index = 1U; (index < max_partitions) && (index < 8); index++) {
 		k_mem_domain_add_partition(&mem_domain_tc3_mem_domain,
 					   mem_domain_tc3_partition_array \
@@ -436,7 +422,6 @@ void test_mem_domain_add_partitions_simple(void *p1, void *p2, void *p3)
 
 	}
 
-	k_mem_domain_remove_thread(k_current_get());
 	k_mem_domain_add_thread(&mem_domain_tc3_mem_domain,
 				k_current_get());
 
@@ -449,10 +434,9 @@ void test_mem_domain_add_partitions_simple(void *p1, void *p2, void *p3)
 
 /****************************************************************************/
 /* Test removal of a partition. */
-void mem_domain_for_user_tc5(void *p1, void *p2, void *p3)
+static void mem_domain_for_user_tc5(void *p1, void *p2, void *p3)
 {
-	valid_fault = true;
-	USERSPACE_BARRIER;
+	set_fault_valid(true);
 
 	/* will generate a fault */
 	mem_domain_tc3_part1[0] = 10U;
@@ -466,9 +450,8 @@ void mem_domain_for_user_tc5(void *p1, void *p2, void *p3)
  * @see k_mem_domain_remove_partition(),
  * k_mem_domain_add_thread(), k_thread_user_mode_enter()
  */
-void test_mem_domain_remove_partitions_simple(void *p1, void *p2, void *p3)
+void test_mem_domain_remove_partitions_simple(void)
 {
-	k_mem_domain_remove_thread(k_current_get());
 	k_mem_domain_add_thread(&mem_domain_tc3_mem_domain,
 				k_current_get());
 
@@ -482,21 +465,19 @@ void test_mem_domain_remove_partitions_simple(void *p1, void *p2, void *p3)
 }
 
 /****************************************************************************/
-void mem_domain_test_6_1(void *p1, void *p2, void *p3)
+static void mem_domain_test_6_1(void *p1, void *p2, void *p3)
 {
-	valid_fault = false;
-	USERSPACE_BARRIER;
+	set_fault_valid(false);
 
-	mem_domain_tc3_part2[0] = 10U;
+	mem_domain_tc3_part1[0] = 10U;
 	k_thread_abort(k_current_get());
 }
 
-void mem_domain_test_6_2(void *p1, void *p2, void *p3)
+static void mem_domain_test_6_2(void *p1, void *p2, void *p3)
 {
-	valid_fault = true;
-	USERSPACE_BARRIER;
+	set_fault_valid(true);
 
-	mem_domain_tc3_part2[0] = 10U;
+	mem_domain_tc3_part1[0] = 10U;
 	zassert_unreachable(ERROR_STR);
 }
 
@@ -510,12 +491,20 @@ void mem_domain_test_6_2(void *p1, void *p2, void *p3)
  *
  * @see k_mem_domain_remove_partition()
  */
-void test_mem_domain_remove_partitions(void *p1, void *p2, void *p3)
+void test_mem_domain_remove_partitions(void)
 {
-	k_mem_domain_remove_thread(k_current_get());
+	uint8_t max_partitions = (uint8_t)arch_mem_domain_max_partitions_get();
+
+	/* Re-initialize domain with the max permitted number of partitions */
+	k_mem_domain_init(&mem_domain_tc3_mem_domain,
+			  MIN(max_partitions,
+			    ARRAY_SIZE(mem_domain_tc3_partition_array)),
+			  mem_domain_tc3_partition_array);
+
 	k_mem_domain_add_thread(&mem_domain_tc3_mem_domain,
 				k_current_get());
 
+	mem_domain_tc3_part1[0] = 10U;
 	mem_domain_tc3_part2[0] = 10U;
 
 	k_thread_create(&mem_domain_6_tid,
@@ -525,11 +514,10 @@ void test_mem_domain_remove_partitions(void *p1, void *p2, void *p3)
 			NULL, NULL, NULL,
 			-1, K_USER | K_INHERIT_PERMS, K_NO_WAIT);
 
-
-	k_sem_take(&sync_sem, K_MSEC(100));
+	k_thread_join(&mem_domain_6_tid, K_FOREVER);
 
 	k_mem_domain_remove_partition(&mem_domain_tc3_mem_domain,
-				      &mem_domain_tc3_part2_struct);
+				      &mem_domain_tc3_part1_struct);
 
 	k_thread_create(&mem_domain_6_tid,
 			mem_domain_6_stack,
@@ -538,72 +526,5 @@ void test_mem_domain_remove_partitions(void *p1, void *p2, void *p3)
 			NULL, NULL, NULL,
 			-1, K_USER | K_INHERIT_PERMS, K_NO_WAIT);
 
-	k_sem_take(&sync_sem, SYNC_SEM_TIMEOUT);
-
-}
-/****************************************************************************/
-
-void mem_domain_for_user_tc7(void *p1, void *p2, void *p3)
-{
-	valid_fault = true;
-	USERSPACE_BARRIER;
-
-	/* will generate a fault */
-	mem_domain_tc3_part4[0] = 10U;
-	zassert_unreachable(ERROR_STR);
-}
-
-/**
- * @brief Test removal of a thread from the memory domain.
- *
- * @details Till now all the test suite would have tested add thread.
- * this ensures that remove is working correctly.
- *
- * @ingroup kernel_memprotect_tests
- *
- * @see k_mem_domain_remove_thread()
- */
-void test_mem_domain_remove_thread(void *p1, void *p2, void *p3)
-{
-	k_mem_domain_remove_thread(k_current_get());
-
-	k_mem_domain_add_thread(&mem_domain_tc3_mem_domain,
-				k_current_get());
-
-
-	k_mem_domain_remove_thread(k_current_get());
-	k_mem_domain_add_thread(&ztest_mem_domain, k_current_get());
-
-	k_thread_user_mode_enter(mem_domain_for_user_tc7,
-				 NULL, NULL, NULL);
-
-}
-/****************************************************************************/
-/**
- * @brief Test k_mem_domain_destroy API
- *
- * @ingroup kernel_memprotect_tests
- *
- * @see k_mem_domain_add_thread(), k_mem_domain_destroy()
- * */
-void test_mem_domain_destroy(void)
-{
-	k_mem_domain_init(&mem_domain1,
-			  ARRAY_SIZE(mem_domain_memory_partition_array1),
-			  mem_domain_memory_partition_array1);
-	k_mem_domain_remove_thread(k_current_get());
-
-	k_mem_domain_add_thread(&mem_domain1, k_current_get());
-
-	k_tid_t tid = k_current_get();
-
-	if (tid->mem_domain_info.mem_domain == &mem_domain1) {
-		k_mem_domain_destroy(&mem_domain1);
-
-		zassert_true(tid->mem_domain_info.mem_domain !=
-			     &mem_domain1, "The thread has reference to"
-			     " memory domain which is already destroyed");
-	} else {
-		zassert_unreachable("k_mem_domain_add_thread() failed");
-	}
+	k_thread_join(&mem_domain_6_tid, K_FOREVER);
 }

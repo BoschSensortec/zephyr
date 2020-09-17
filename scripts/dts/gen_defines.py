@@ -22,6 +22,7 @@ import argparse
 from collections import defaultdict
 import os
 import pathlib
+import pickle
 import re
 import sys
 
@@ -29,6 +30,7 @@ import edtlib
 
 def main():
     global header_file
+    global flash_area_num
 
     args = parse_args()
 
@@ -36,29 +38,55 @@ def main():
         edt = edtlib.EDT(args.dts, args.bindings_dirs,
                          # Suppress this warning if it's suppressed in dtc
                          warn_reg_unit_address_mismatch=
-                             "-Wno-simple_bus_reg" not in args.dtc_flags)
+                             "-Wno-simple_bus_reg" not in args.dtc_flags,
+                         default_prop_types=True,
+                         infer_binding_for_paths=["/zephyr,user"])
     except edtlib.EDTError as e:
         sys.exit(f"devicetree error: {e}")
+
+    flash_area_num = 0
 
     # Save merged DTS source, as a debugging aid
     with open(args.dts_out, "w", encoding="utf-8") as f:
         print(edt.dts_source, file=f)
 
+    # The raw index into edt.compat2nodes[compat] is used for node
+    # instance numbering within a compatible.
+    #
+    # As a way to satisfy people's intuitions about instance numbers,
+    # though, we sort this list so enabled instances come first.
+    #
+    # This might look like a hack, but it keeps drivers and
+    # applications which don't use instance numbers carefully working
+    # as expected, since e.g. instance number 0 is always the
+    # singleton instance if there's just one enabled node of a
+    # particular compatible.
+    #
+    # This doesn't violate any devicetree.h API guarantees about
+    # instance ordering, since we make no promises that instance
+    # numbers are stable across builds.
+    for compat, nodes in edt.compat2nodes.items():
+        edt.compat2nodes[compat] = sorted(
+            nodes, key=lambda node: 0 if node.status == "okay" else 1)
+
+    # Create the generated header.
     with open(args.header_out, "w", encoding="utf-8") as header_file:
         write_top_comment(edt)
 
+        # populate all z_path_id first so any children references will
+        # work correctly.
         for node in sorted(edt.nodes, key=lambda node: node.dep_ordinal):
-            node.z_path_id = "N_" + "_".join(
-                f"S_{str2ident(name)}" for name in node.path[1:].split("/"))
+            node.z_path_id = node_z_path_id(node)
+
+        for node in sorted(edt.nodes, key=lambda node: node.dep_ordinal):
             write_node_comment(node)
 
-            if not node.enabled:
-                out_comment("No macros: node is disabled")
-                continue
-            if not node.matching_compat:
-                out_comment("No macros: node has no matching binding")
-                continue
+            if node.parent is not None:
+                out_comment(f"Node parent ({node.parent.path}) identifier:")
+                out_dt_define(f"{node.z_path_id}_PARENT",
+                              f"DT_{node.parent.z_path_id}")
 
+            write_child_functions(node)
             write_idents_and_existence(node)
             write_bus(node)
             write_special_props(node)
@@ -67,6 +95,27 @@ def main():
         write_chosen(edt)
         write_global_compat_info(edt)
 
+    if args.edt_pickle_out:
+        write_pickled_edt(edt, args.edt_pickle_out)
+
+
+def node_z_path_id(node):
+    # Return the node specific bit of the node's path identifier:
+    #
+    # - the root node's path "/" has path identifier "N"
+    # - "/foo" has "N_S_foo"
+    # - "/foo/bar" has "N_S_foo_S_bar"
+    # - "/foo/bar@123" has "N_S_foo_S_bar_123"
+    #
+    # This is used throughout this file to generate macros related to
+    # the node.
+
+    components = ["N"]
+    if node.parent is not None:
+        components.extend(f"S_{str2ident(component)}" for component in
+                          node.path.split("/")[1:])
+
+    return "_".join(components)
 
 def parse_args():
     # Returns parsed command-line arguments
@@ -84,6 +133,8 @@ def parse_args():
     parser.add_argument("--dts-out", required=True,
                         help="path to write merged DTS source code to (e.g. "
                              "as a debugging aid)")
+    parser.add_argument("--edt-pickle-out",
+                        help="path to write pickled edtlib.EDT object to")
 
     return parser.parse_args()
 
@@ -122,17 +173,21 @@ def write_node_comment(node):
     # Writes a comment describing 'node' to the header and configuration file
 
     s = f"""\
-Devicetree node:
-  {node.path}
+Devicetree node: {node.path}
+
+Node's generated path identifier: DT_{node.z_path_id}
 """
 
     if node.matching_compat:
-        s += f"""
+        if node.binding_path:
+            s += f"""
 Binding (compatible = {node.matching_compat}):
   {relativize(node.binding_path)}
 """
-        s += f"""
-Node's path identifier in this file: {node.z_path_id}
+        else:
+            s += f"""
+Binding (compatible = {node.matching_compat}):
+  No yaml (bindings inferred from properties)
 """
 
     s += f"\nDependency Ordinal: {node.dep_ordinal}\n"
@@ -181,9 +236,7 @@ def write_idents_and_existence(node):
     idents = [f"N_ALIAS_{str2ident(alias)}" for alias in node.aliases]
     # Instances
     for compat in node.compats:
-        if not node.enabled:
-            continue
-        instance_no = node.edt.compat2enabled[compat].index(node)
+        instance_no = node.edt.compat2nodes[compat].index(node)
         idents.append(f"N_INST_{instance_no}_{str2ident(compat)}")
     # Node labels
     idents.extend(f"N_NODELABEL_{str2ident(label)}" for label in node.labels)
@@ -218,13 +271,20 @@ def write_special_props(node):
     # data cannot otherwise be obtained from write_vanilla_props()
     # results
 
+    global flash_area_num
+
     out_comment("Special property macros:")
 
     # Macros that are special to the devicetree specification
     write_regs(node)
     write_interrupts(node)
     write_compatibles(node)
+    write_status(node)
 
+    if node.parent and "fixed-partitions" in node.parent.compats:
+        macro = f"{node.z_path_id}_PARTITION_ID"
+        out_dt_define(macro, flash_area_num)
+        flash_area_num += 1
 
 def write_regs(node):
     # reg property: edtlib knows the right #address-cells and
@@ -337,6 +397,19 @@ def write_compatibles(node):
     for compat in node.compats:
         out_dt_define(
             f"{node.z_path_id}_COMPAT_MATCHES_{str2ident(compat)}", 1)
+
+
+def write_child_functions(node):
+    # Writes macro that are helpers that will call a macro/function
+    # for each child node.
+
+    out_dt_define(f"{node.z_path_id}_FOREACH_CHILD(fn)",
+            " ".join(f"fn(DT_{child.z_path_id})" for child in
+                node.children.values()))
+
+
+def write_status(node):
+    out_dt_define(f"{node.z_path_id}_STATUS_{str2ident(node.status)}", 1)
 
 
 def write_vanilla_props(node):
@@ -519,38 +592,47 @@ def write_chosen(edt):
 
 def write_global_compat_info(edt):
     # Tree-wide information related to each compatible, such as number
-    # of instances, is printed here.
+    # of instances with status "okay", is printed here.
 
-    compat2numinst = {}
-    compat2buses = defaultdict(list)
-    for compat, enabled in edt.compat2enabled.items():
-        compat2numinst[compat] = len(enabled)
-
-        for node in enabled:
+    n_okay_macros = {}
+    for_each_macros = {}
+    compat2buses = defaultdict(list)  # just for "okay" nodes
+    for compat, okay_nodes in edt.compat2okay.items():
+        for node in okay_nodes:
             bus = node.on_bus
             if bus is not None and bus not in compat2buses[compat]:
                 compat2buses[compat].append(bus)
 
-    out_comment("Helpers for calling a macro/function a fixed number of times"
-                "\n")
-    for numinsts in range(1, max(compat2numinst.values(), default=0) + 1):
-        out_define(f"DT_FOREACH_IMPL_{numinsts}(fn)",
-                   " ".join([f"fn({i});" for i in range(numinsts)]))
-
-    out_comment("Macros for enabled instances of each compatible\n")
-    n_inst_macros = {}
-    for_each_macros = {}
-    for compat, numinst in compat2numinst.items():
         ident = str2ident(compat)
-        n_inst_macros[f"DT_N_INST_{ident}_NUM"] = numinst
-        for_each_macros[f"DT_FOREACH_INST_{ident}(fn)"] = \
-            f"DT_FOREACH_IMPL_{numinst}(fn)"
-    for macro, value in n_inst_macros.items():
+        n_okay_macros[f"DT_N_INST_{ident}_NUM_OKAY"] = len(okay_nodes)
+        for_each_macros[f"DT_FOREACH_OKAY_INST_{ident}(fn)"] = \
+            " ".join(f"fn({edt.compat2nodes[compat].index(node)})"
+                     for node in okay_nodes)
+
+    for compat, nodes in edt.compat2nodes.items():
+        for node in nodes:
+            if compat == "fixed-partitions":
+                for child in node.children.values():
+                    if "label" in child.props:
+                        label = child.props["label"].val
+                        macro = f"COMPAT_{str2ident(compat)}_LABEL_{str2ident(label)}"
+                        val = f"DT_{child.z_path_id}"
+
+                        out_dt_define(macro, val)
+                        out_dt_define(macro + "_EXISTS", 1)
+
+    out_comment('Macros for compatibles with status "okay" nodes\n')
+    for compat, okay_nodes in edt.compat2okay.items():
+        if okay_nodes:
+            out_define(f"DT_COMPAT_HAS_OKAY_{str2ident(compat)}", 1)
+
+    out_comment('Macros for status "okay" instances of each compatible\n')
+    for macro, value in n_okay_macros.items():
         out_define(macro, value)
     for macro, value in for_each_macros.items():
         out_define(macro, value)
 
-    out_comment("Bus information for enabled nodes of each compatible\n")
+    out_comment('Bus information for status "okay" nodes of each compatible\n')
     for compat, buses in compat2buses.items():
         for bus in buses:
             out_define(
@@ -643,6 +725,21 @@ def quote_str(s):
     # backslashes within it
 
     return f'"{escape(s)}"'
+
+
+def write_pickled_edt(edt, out_file):
+    # Writes the edt object in pickle format to out_file.
+
+    with open(out_file, 'wb') as f:
+        # Pickle protocol version 4 is the default as of Python 3.8
+        # and was introduced in 3.4, so it is both available and
+        # recommended on all versions of Python that Zephyr supports
+        # (at time of writing, Python 3.6 was Zephyr's minimum
+        # version, and 3.8 the most recent CPython release).
+        #
+        # Using a common protocol version here will hopefully avoid
+        # reproducibility issues in different Python installations.
+        pickle.dump(edt, f, protocol=4)
 
 
 def err(s):

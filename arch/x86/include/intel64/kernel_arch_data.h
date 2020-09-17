@@ -20,19 +20,16 @@ extern char _locore_start[], _locore_end[];
 
 struct x86_cpuboot {
 	volatile int ready;	/* CPU has started */
-	u16_t tr;		/* selector for task register */
+	uint16_t tr;		/* selector for task register */
 	struct x86_tss64 *gs_base; /* Base address for GS segment */
-	u64_t sp;		/* initial stack pointer */
+	uint64_t sp;		/* initial stack pointer */
 	arch_cpustart_t fn;	/* kernel entry function */
 	void *arg;		/* argument for above function */
-#ifdef CONFIG_X86_MMU
-	struct x86_page_tables *ptables; /* Runtime page tables to install */
-#endif /* CONFIG_X86_MMU */
 };
 
 typedef struct x86_cpuboot x86_cpuboot_t;
 
-extern u8_t x86_cpu_loapics[];	/* CPU logical ID -> local APIC ID */
+extern uint8_t x86_cpu_loapics[];	/* CPU logical ID -> local APIC ID */
 
 #endif /* _ASMLANGUAGE */
 

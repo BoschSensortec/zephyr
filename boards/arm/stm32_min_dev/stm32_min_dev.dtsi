@@ -14,6 +14,7 @@
 	chosen {
 		zephyr,console = &usart1;
 		zephyr,shell-uart = &usart1;
+		zephyr,osdp-uart = &usart2;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
 	};
@@ -67,11 +68,15 @@
 &timers1 {
 	status = "okay";
 
-	pwm {
+	pwm1: pwm {
 		status = "okay";
 	};
 };
 
 &usb {
+	status = "okay";
+};
+
+&adc1 {
 	status = "okay";
 };

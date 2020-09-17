@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 zephyr_sources_ifdef(CONFIG_ARCV2_INTERRUPT_UNIT    intc_arcv2_irq_unit.c)
-zephyr_sources_ifdef(CONFIG_GIC                     intc_gic.c)
+zephyr_sources_ifdef(CONFIG_GIC_V1                  intc_gic.c)
+zephyr_sources_ifdef(CONFIG_GIC_V2                  intc_gic.c)
+zephyr_sources_ifdef(CONFIG_GIC_V3                  intc_gicv3.c)
 zephyr_sources_ifdef(CONFIG_IOAPIC                  intc_ioapic.c)
 zephyr_sources_ifdef(CONFIG_LOAPIC                  intc_loapic.c intc_system_apic.c)
 zephyr_sources_ifdef(CONFIG_LOAPIC_SPURIOUS_VECTOR  intc_loapic_spurious.S)
@@ -14,3 +16,4 @@ zephyr_sources_ifdef(CONFIG_RV32M1_INTMUX           intc_rv32m1_intmux.c)
 zephyr_sources_ifdef(CONFIG_SAM0_EIC                intc_sam0_eic.c)
 zephyr_sources_ifdef(CONFIG_VEXRISCV_LITEX_IRQ      intc_vexriscv_litex.c)
 zephyr_sources_ifdef(CONFIG_SWERV_PIC               intc_swerv_pic.c)
+zephyr_sources_ifdef(CONFIG_NPCX_MIWU               intc_miwu.c)

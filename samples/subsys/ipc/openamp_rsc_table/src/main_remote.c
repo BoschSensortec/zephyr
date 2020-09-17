@@ -22,15 +22,20 @@ LOG_MODULE_REGISTER(openamp_rsc_table, LOG_LEVEL_DBG);
 #define RPMSG_CHAN_NAME	"rpmsg-client-sample"
 #define SHM_DEVICE_NAME	"shm"
 
-/* constant derivated from linker symbols */
-#define SHM_START_ADDR	DT_IPC_SHM_BASE_ADDRESS
-#define SHM_SIZE	(DT_IPC_SHM_SIZE * 1024)
+#if !DT_HAS_CHOSEN(zephyr_ipc_shm)
+#error "Sample requires definition of shared memory for rpmsg"
+#endif
+
+/* Constants derived from device tree */
+#define SHM_NODE		DT_CHOSEN(zephyr_ipc_shm)
+#define SHM_START_ADDR	DT_REG_ADDR(SHM_NODE)
+#define SHM_SIZE		DT_REG_SIZE(SHM_NODE)
 
 #define APP_TASK_STACK_SIZE (512)
 K_THREAD_STACK_DEFINE(thread_stack, APP_TASK_STACK_SIZE);
 static struct k_thread thread_data;
 
-static struct device *ipm_handle;
+static const struct device *ipm_handle;
 
 static metal_phys_addr_t shm_physmap = SHM_START_ADDR;
 
@@ -61,7 +66,8 @@ static struct rpmsg_endpoint rcv_ept;
 static K_SEM_DEFINE(data_sem, 0, 1);
 static K_SEM_DEFINE(data_rx_sem, 0, 1);
 
-static void platform_ipm_callback(void *context, u32_t id, volatile void *data)
+static void platform_ipm_callback(const struct device *device, void *context,
+				  uint32_t id, volatile void *data)
 {
 	LOG_DBG("%s: msg received from mb %d\n", __func__, id);
 	k_sem_give(&data_sem);

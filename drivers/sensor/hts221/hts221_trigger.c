@@ -15,11 +15,11 @@
 
 LOG_MODULE_DECLARE(HTS221, CONFIG_SENSOR_LOG_LEVEL);
 
-static inline void setup_drdy(struct device *dev,
+static inline void setup_drdy(const struct device *dev,
 			      bool enable)
 {
-	struct hts221_data *data = dev->driver_data;
-	const struct hts221_config *cfg = dev->config->config_info;
+	struct hts221_data *data = dev->data;
+	const struct hts221_config *cfg = dev->config;
 	unsigned int flags = enable
 		? GPIO_INT_EDGE_TO_ACTIVE
 		: GPIO_INT_DISABLE;
@@ -27,9 +27,9 @@ static inline void setup_drdy(struct device *dev,
 	gpio_pin_interrupt_configure(data->drdy_dev, cfg->drdy_pin, flags);
 }
 
-static inline void handle_drdy(struct device *dev)
+static inline void handle_drdy(const struct device *dev)
 {
-	struct hts221_data *data = dev->driver_data;
+	struct hts221_data *data = dev->data;
 
 	setup_drdy(dev, false);
 
@@ -40,9 +40,9 @@ static inline void handle_drdy(struct device *dev)
 #endif
 }
 
-static void process_drdy(struct device *dev)
+static void process_drdy(const struct device *dev)
 {
-	struct hts221_data *data = dev->driver_data;
+	struct hts221_data *data = dev->data;
 
 	if (data->data_ready_handler != NULL) {
 		data->data_ready_handler(dev, &data->data_ready_trigger);
@@ -53,12 +53,12 @@ static void process_drdy(struct device *dev)
 	}
 }
 
-int hts221_trigger_set(struct device *dev,
+int hts221_trigger_set(const struct device *dev,
 		       const struct sensor_trigger *trig,
 		       sensor_trigger_handler_t handler)
 {
-	struct hts221_data *data = dev->driver_data;
-	const struct hts221_config *cfg = dev->config->config_info;
+	struct hts221_data *data = dev->data;
+	const struct hts221_config *cfg = dev->config;
 
 	__ASSERT_NO_MSG(trig->type == SENSOR_TRIG_DATA_READY);
 
@@ -83,8 +83,8 @@ int hts221_trigger_set(struct device *dev,
 	return 0;
 }
 
-static void hts221_drdy_callback(struct device *dev,
-				 struct gpio_callback *cb, u32_t pins)
+static void hts221_drdy_callback(const struct device *dev,
+				 struct gpio_callback *cb, uint32_t pins)
 {
 	struct hts221_data *data =
 		CONTAINER_OF(cb, struct hts221_data, drdy_cb);
@@ -95,16 +95,11 @@ static void hts221_drdy_callback(struct device *dev,
 }
 
 #ifdef CONFIG_HTS221_TRIGGER_OWN_THREAD
-static void hts221_thread(int dev_ptr, int unused)
+static void hts221_thread(struct hts221_data *data)
 {
-	struct device *dev = INT_TO_POINTER(dev_ptr);
-	struct hts221_data *data = dev->driver_data;
-
-	ARG_UNUSED(unused);
-
 	while (1) {
 		k_sem_take(&data->drdy_sem, K_FOREVER);
-		process_drdy(dev);
+		process_drdy(data->dev);
 	}
 }
 #endif
@@ -119,10 +114,10 @@ static void hts221_work_cb(struct k_work *work)
 }
 #endif
 
-int hts221_init_interrupt(struct device *dev)
+int hts221_init_interrupt(const struct device *dev)
 {
-	struct hts221_data *data = dev->driver_data;
-	const struct hts221_config *cfg = dev->config->config_info;
+	struct hts221_data *data = dev->data;
+	const struct hts221_config *cfg = dev->config;
 
 	data->dev = dev;
 
@@ -157,8 +152,8 @@ int hts221_init_interrupt(struct device *dev)
 
 	k_thread_create(&data->thread, data->thread_stack,
 			CONFIG_HTS221_THREAD_STACK_SIZE,
-			(k_thread_entry_t)hts221_thread, dev,
-			0, NULL, K_PRIO_COOP(CONFIG_HTS221_THREAD_PRIORITY),
+			(k_thread_entry_t)hts221_thread, data,
+			NULL, NULL, K_PRIO_COOP(CONFIG_HTS221_THREAD_PRIORITY),
 			0, K_NO_WAIT);
 #elif defined(CONFIG_HTS221_TRIGGER_GLOBAL_THREAD)
 	data->work.handler = hts221_work_cb;

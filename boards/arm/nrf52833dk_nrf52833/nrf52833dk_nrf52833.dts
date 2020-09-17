@@ -9,8 +9,7 @@
 
 / {
 	model = "Nordic nRF52833 DK NRF52833";
-	compatible = "nordic,nrf52833-dk-nrf52833", "nordic,nrf52833-qiaa",
-		     "nordic,nrf52833";
+	compatible = "nordic,nrf52833-dk-nrf52833";
 
 	chosen {
 		zephyr,console = &uart0;
@@ -189,13 +188,13 @@ arduino_spi: &spi3 {
 	sck-pin = <23>;
 	miso-pin = <22>;
 	mosi-pin = <21>;
-	cs-gpios = <&arduino_header 16 0>; /* D10 */
+	cs-gpios = <&arduino_header 16 GPIO_ACTIVE_LOW>; /* D10 */
 };
 
 &flash0 {
 	/*
 	 * For more information, see:
-	 * http://docs.zephyrproject.org/latest/guides/dts/index.html#flash-partitions
+	 * https://docs.zephyrproject.org/latest/guides/dts/legacy-macros.html#legacy-flash-partitions
 	 */
 	partitions {
 		compatible = "fixed-partitions";

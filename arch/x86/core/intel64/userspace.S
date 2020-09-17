@@ -4,9 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <toolchain.h>
 #include <arch/cpu.h>
 #include <offsets_short.h>
 #include <syscall.h>
+#include <sys/mem_manage.h>
 
 #ifdef CONFIG_X86_KPTI
 /* Copy interrupt return stack context to the trampoline stack, switch back
@@ -323,6 +325,7 @@ z_x86_userspace_enter:
 	xorq	%r15, %r15
 
 	cli
+
 #ifdef CONFIG_X86_KPTI
 	/* Switch to thread's page table. We have free registers so no need
 	 * to involve the trampoline stack.

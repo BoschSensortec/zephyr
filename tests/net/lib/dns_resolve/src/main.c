@@ -13,6 +13,7 @@ LOG_MODULE_REGISTER(net_test, CONFIG_DNS_RESOLVER_LOG_LEVEL);
 #include <string.h>
 #include <errno.h>
 #include <sys/printk.h>
+#include <random/rand32.h>
 
 #include <ztest.h>
 
@@ -64,26 +65,26 @@ static bool test_started;
 static bool timeout_query;
 static struct k_sem wait_data;
 static struct k_sem wait_data2;
-static u16_t current_dns_id;
+static uint16_t current_dns_id;
 static struct dns_addrinfo addrinfo;
 
 /* this must be higher that the DNS_TIMEOUT */
 #define WAIT_TIME K_MSEC(DNS_TIMEOUT + 300)
 
 struct net_if_test {
-	u8_t idx;
-	u8_t mac_addr[sizeof(struct net_eth_addr)];
+	uint8_t idx;
+	uint8_t mac_addr[sizeof(struct net_eth_addr)];
 	struct net_linkaddr ll_addr;
 };
 
-static int net_iface_dev_init(struct device *dev)
+static int net_iface_dev_init(const struct device *dev)
 {
 	return 0;
 }
 
-static u8_t *net_iface_get_mac(struct device *dev)
+static uint8_t *net_iface_get_mac(const struct device *dev)
 {
-	struct net_if_test *data = dev->driver_data;
+	struct net_if_test *data = dev->data;
 
 	if (data->mac_addr[2] == 0x00) {
 		/* 00-00-5E-00-53-xx Documentation RFC 7042 */
@@ -103,14 +104,14 @@ static u8_t *net_iface_get_mac(struct device *dev)
 
 static void net_iface_init(struct net_if *iface)
 {
-	u8_t *mac = net_iface_get_mac(net_if_get_device(iface));
+	uint8_t *mac = net_iface_get_mac(net_if_get_device(iface));
 
 	net_if_set_link_addr(iface, mac, sizeof(struct net_eth_addr),
 			     NET_LINK_ETHERNET);
 }
 
 static inline int get_slot_by_id(struct dns_resolve_context *ctx,
-				 u16_t dns_id)
+				 uint16_t dns_id)
 {
 	int i;
 
@@ -123,7 +124,7 @@ static inline int get_slot_by_id(struct dns_resolve_context *ctx,
 	return -1;
 }
 
-static int sender_iface(struct device *dev, struct net_pkt *pkt)
+static int sender_iface(const struct device *dev, struct net_pkt *pkt)
 {
 	if (!pkt->frags) {
 		DBG("No data to send!\n");
@@ -131,7 +132,7 @@ static int sender_iface(struct device *dev, struct net_pkt *pkt)
 	}
 
 	if (!timeout_query) {
-		struct net_if_test *data = dev->driver_data;
+		struct net_if_test *data = dev->data;
 		struct dns_resolve_context *ctx;
 		int slot;
 
@@ -208,7 +209,7 @@ static void test_init(void)
 
 	iface1 = net_if_get_by_index(1);
 
-	((struct net_if_test *)net_if_get_device(iface1)->driver_data)->idx =
+	((struct net_if_test *) net_if_get_device(iface1)->data)->idx =
 		net_if_get_by_iface(iface1);
 
 #if defined(CONFIG_NET_IPV6)
@@ -270,7 +271,7 @@ void dns_result_cb_dummy(enum dns_resolve_status status,
 	return;
 }
 
-static void dns_query_invalid_timeout(void)
+static void test_dns_query_invalid_timeout(void)
 {
 	int ret;
 
@@ -283,7 +284,7 @@ static void dns_query_invalid_timeout(void)
 	zassert_equal(ret, -EINVAL, "Wrong return code for timeout");
 }
 
-static void dns_query_invalid_context(void)
+static void test_dns_query_invalid_context(void)
 {
 	int ret;
 
@@ -297,7 +298,7 @@ static void dns_query_invalid_context(void)
 	zassert_equal(ret, -EINVAL, "Wrong return code for context");
 }
 
-static void dns_query_invalid_callback(void)
+static void test_dns_query_invalid_callback(void)
 {
 	int ret;
 
@@ -310,7 +311,7 @@ static void dns_query_invalid_callback(void)
 	zassert_equal(ret, -EINVAL, "Wrong return code for callback");
 }
 
-static void dns_query_invalid_query(void)
+static void test_dns_query_invalid_query(void)
 {
 	int ret;
 
@@ -339,7 +340,7 @@ void dns_result_cb_timeout(enum dns_resolve_status status,
 	k_sem_give(&wait_data);
 }
 
-static void dns_query_server_count(void)
+static void test_dns_query_server_count(void)
 {
 	struct dns_resolve_context *ctx = dns_resolve_get_default();
 	int i, count = 0;
@@ -360,7 +361,7 @@ static void dns_query_server_count(void)
 		     "Invalid number of servers");
 }
 
-static void dns_query_ipv4_server_count(void)
+static void test_dns_query_ipv4_server_count(void)
 {
 	struct dns_resolve_context *ctx = dns_resolve_get_default();
 	int i, count = 0, port = 0;
@@ -390,7 +391,7 @@ static void dns_query_ipv4_server_count(void)
 	zassert_equal(port, 1, "Invalid number of IPv4 servers with port 53");
 }
 
-static void dns_query_ipv6_server_count(void)
+static void test_dns_query_ipv6_server_count(void)
 {
 	struct dns_resolve_context *ctx = dns_resolve_get_default();
 	int i, count = 0, port = 0;
@@ -425,7 +426,7 @@ static void dns_query_ipv6_server_count(void)
 #endif
 }
 
-static void dns_query_too_many(void)
+static void test_dns_query_too_many(void)
 {
 	int expected_status = DNS_EAI_CANCELED;
 	int ret;
@@ -455,7 +456,7 @@ static void dns_query_too_many(void)
 	timeout_query = false;
 }
 
-static void dns_query_ipv4_timeout(void)
+static void test_dns_query_ipv4_timeout(void)
 {
 	int expected_status = DNS_EAI_CANCELED;
 	int ret;
@@ -477,7 +478,7 @@ static void dns_query_ipv4_timeout(void)
 	timeout_query = false;
 }
 
-static void dns_query_ipv6_timeout(void)
+static void test_dns_query_ipv6_timeout(void)
 {
 	int expected_status = DNS_EAI_CANCELED;
 	int ret;
@@ -518,10 +519,10 @@ static void verify_cancelled(void)
 	zassert_equal(timer_not_stopped, 0, "Not all timers vere cancelled");
 }
 
-static void dns_query_ipv4_cancel(void)
+static void test_dns_query_ipv4_cancel(void)
 {
 	int expected_status = DNS_EAI_CANCELED;
-	u16_t dns_id;
+	uint16_t dns_id;
 	int ret;
 
 	timeout_query = true;
@@ -544,10 +545,10 @@ static void dns_query_ipv4_cancel(void)
 	verify_cancelled();
 }
 
-static void dns_query_ipv6_cancel(void)
+static void test_dns_query_ipv6_cancel(void)
 {
 	int expected_status = DNS_EAI_CANCELED;
-	u16_t dns_id;
+	uint16_t dns_id;
 	int ret;
 
 	timeout_query = true;
@@ -594,7 +595,7 @@ void dns_result_cb(enum dns_resolve_status status,
 	k_sem_give(&wait_data2);
 }
 
-static void dns_query_ipv4(void)
+static void test_dns_query_ipv4(void)
 {
 	struct expected_status status = {
 		.status1 = DNS_EAI_INPROGRESS,
@@ -623,7 +624,7 @@ static void dns_query_ipv4(void)
 }
 
 #if defined(TEMPORARILY_DISABLED_TEST)
-static void dns_query_ipv6(void)
+static void test_dns_query_ipv6(void)
 {
 	struct expected_status status = {
 		.status1 = DNS_EAI_INPROGRESS,
@@ -693,7 +694,7 @@ void dns_result_numeric_cb(enum dns_resolve_status status,
 	k_sem_give(&wait_data2);
 }
 
-static void dns_query_ipv4_numeric(void)
+static void test_dns_query_ipv4_numeric(void)
 {
 	struct expected_addr_status status = {
 		.status1 = DNS_EAI_INPROGRESS,
@@ -722,7 +723,7 @@ static void dns_query_ipv4_numeric(void)
 }
 
 #if defined(TEMPORARILY_DISABLED_TEST)
-static void dns_query_ipv6_numeric(void)
+static void test_dns_query_ipv6_numeric(void)
 {
 	struct expected_addr_status status = {
 		.status1 = DNS_EAI_INPROGRESS,
@@ -755,20 +756,20 @@ void test_main(void)
 {
 	ztest_test_suite(dns_tests,
 			 ztest_unit_test(test_init),
-			 ztest_unit_test(dns_query_invalid_timeout),
-			 ztest_unit_test(dns_query_invalid_context),
-			 ztest_unit_test(dns_query_invalid_callback),
-			 ztest_unit_test(dns_query_invalid_query),
-			 ztest_unit_test(dns_query_too_many),
-			 ztest_unit_test(dns_query_server_count),
-			 ztest_unit_test(dns_query_ipv4_server_count),
-			 ztest_unit_test(dns_query_ipv6_server_count),
-			 ztest_unit_test(dns_query_ipv4_timeout),
-			 ztest_unit_test(dns_query_ipv6_timeout),
-			 ztest_unit_test(dns_query_ipv4_cancel),
-			 ztest_unit_test(dns_query_ipv6_cancel),
-			 ztest_unit_test(dns_query_ipv4),
-			 ztest_unit_test(dns_query_ipv4_numeric));
+			 ztest_unit_test(test_dns_query_invalid_timeout),
+			 ztest_unit_test(test_dns_query_invalid_context),
+			 ztest_unit_test(test_dns_query_invalid_callback),
+			 ztest_unit_test(test_dns_query_invalid_query),
+			 ztest_unit_test(test_dns_query_too_many),
+			 ztest_unit_test(test_dns_query_server_count),
+			 ztest_unit_test(test_dns_query_ipv4_server_count),
+			 ztest_unit_test(test_dns_query_ipv6_server_count),
+			 ztest_unit_test(test_dns_query_ipv4_timeout),
+			 ztest_unit_test(test_dns_query_ipv6_timeout),
+			 ztest_unit_test(test_dns_query_ipv4_cancel),
+			 ztest_unit_test(test_dns_query_ipv6_cancel),
+			 ztest_unit_test(test_dns_query_ipv4),
+			 ztest_unit_test(test_dns_query_ipv4_numeric));
 
 	ztest_run_test_suite(dns_tests);
 }

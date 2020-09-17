@@ -62,14 +62,34 @@
 #include <ztest.h>
 #include "test_wdt.h"
 
-#ifdef DT_ALIAS_WATCHDOG0_LABEL
-#define WDT_DEV_NAME DT_ALIAS_WATCHDOG0_LABEL
-#else
-#ifdef CONFIG_WWDG_STM32
-#define WDT_DEV_NAME DT_LABEL(DT_INST(0, st_stm32_window_watchdog))
-#else
-#define WDT_DEV_NAME DT_WDT_0_NAME
+/*
+ * To use this test, either the devicetree's /aliases must have a
+ * 'watchdog0' property, or one of the following watchdog compatibles
+ * must have an enabled node.
+ */
+#if DT_NODE_HAS_STATUS(DT_ALIAS(watchdog0), okay)
+#define WDT_NODE DT_ALIAS(watchdog0)
+#elif DT_HAS_COMPAT_STATUS_OKAY(st_stm32_window_watchdog)
+#define WDT_NODE DT_INST(0, st_stm32_window_watchdog)
+#elif DT_HAS_COMPAT_STATUS_OKAY(st_stm32_watchdog)
+#define WDT_NODE DT_INST(0, st_stm32_watchdog)
+#elif DT_HAS_COMPAT_STATUS_OKAY(nordic_nrf_watchdog)
+#define WDT_NODE DT_INST(0, nordic_nrf_watchdog)
+#elif DT_HAS_COMPAT_STATUS_OKAY(espressif_esp32_watchdog)
+#define WDT_NODE DT_INST(0, espressif_esp32_watchdog)
+#elif DT_HAS_COMPAT_STATUS_OKAY(silabs_gecko_wdog)
+#define WDT_NODE DT_INST(0, silabs_gecko_wdog)
+#elif DT_HAS_COMPAT_STATUS_OKAY(nxp_kinetis_wdog32)
+#define WDT_NODE DT_INST(0, nxp_kinetis_wdog32)
+#elif DT_HAS_COMPAT_STATUS_OKAY(microchip_xec_watchdog)
+#define WDT_NODE DT_INST(0, microchip_xec_watchdog)
 #endif
+
+#ifdef WDT_NODE
+#define WDT_DEV_NAME DT_LABEL(WDT_NODE)
+#else
+#define WDT_DEV_NAME ""
+#error "Unsupported SoC and no watchdog0 alias in zephyr.dts"
 #endif
 
 #define WDT_TEST_STATE_IDLE        0
@@ -111,7 +131,7 @@ volatile uint32_t m_testcase_index __attribute__((section(".noinit.test_wdt")));
 volatile uint32_t m_testvalue __attribute__((section(".noinit.test_wdt")));
 
 #if TEST_WDT_CALLBACK_1
-static void wdt_int_cb0(struct device *wdt_dev, int channel_id)
+static void wdt_int_cb0(const struct device *wdt_dev, int channel_id)
 {
 	ARG_UNUSED(wdt_dev);
 	ARG_UNUSED(channel_id);
@@ -120,7 +140,7 @@ static void wdt_int_cb0(struct device *wdt_dev, int channel_id)
 #endif
 
 #if TEST_WDT_CALLBACK_2
-static void wdt_int_cb1(struct device *wdt_dev, int channel_id)
+static void wdt_int_cb1(const struct device *wdt_dev, int channel_id)
 {
 	ARG_UNUSED(wdt_dev);
 	ARG_UNUSED(channel_id);
@@ -131,7 +151,7 @@ static void wdt_int_cb1(struct device *wdt_dev, int channel_id)
 static int test_wdt_no_callback(void)
 {
 	int err;
-	struct device *wdt = device_get_binding(WDT_DEV_NAME);
+	const struct device *wdt = device_get_binding(WDT_DEV_NAME);
 
 	if (!wdt) {
 		TC_PRINT("Cannot get WDT device\n");
@@ -172,7 +192,7 @@ static int test_wdt_no_callback(void)
 static int test_wdt_callback_1(void)
 {
 	int err;
-	struct device *wdt = device_get_binding(WDT_DEV_NAME);
+	const struct device *wdt = device_get_binding(WDT_DEV_NAME);
 
 	if (!wdt) {
 		TC_PRINT("Cannot get WDT device\n");
@@ -198,6 +218,12 @@ static int test_wdt_callback_1(void)
 	m_cfg_wdt0.window.max = 2000U;
 	err = wdt_install_timeout(wdt, &m_cfg_wdt0);
 	if (err < 0) {
+		if (err == -ENOTSUP) {
+			TC_PRINT("CB1 not supported on platform\n");
+			m_testcase_index++;
+			return TC_PASS;
+
+		}
 		TC_PRINT("Watchdog install error\n");
 		return TC_FAIL;
 	}
@@ -221,7 +247,7 @@ static int test_wdt_callback_1(void)
 static int test_wdt_callback_2(void)
 {
 	int err;
-	struct device *wdt = device_get_binding(WDT_DEV_NAME);
+	const struct device *wdt = device_get_binding(WDT_DEV_NAME);
 
 	if (!wdt) {
 		TC_PRINT("Cannot get WDT device\n");
@@ -282,7 +308,7 @@ static int test_wdt_callback_2(void)
 static int test_wdt_bad_window_max(void)
 {
 	int err;
-	struct device *wdt = device_get_binding(WDT_DEV_NAME);
+	const struct device *wdt = device_get_binding(WDT_DEV_NAME);
 
 	if (!wdt) {
 		TC_PRINT("Cannot get WDT device\n");

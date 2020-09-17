@@ -12,16 +12,16 @@
 LOG_MODULE_REGISTER(kscan, CONFIG_KSCAN_LOG_LEVEL);
 
 struct sdl_data {
+	const struct device *dev;
 	kscan_callback_t callback;
 	bool enabled;
 };
 
 static int sdl_filter(void *arg, SDL_Event *event)
 {
-	struct device *dev = arg;
-	struct sdl_data *data = dev->driver_data;
-	u32_t row = 0;
-	u32_t column = 0;
+	struct sdl_data *data = arg;
+	uint32_t row = 0;
+	uint32_t column = 0;
 	bool pressed = 0;
 
 	switch (event->type) {
@@ -47,48 +47,52 @@ static int sdl_filter(void *arg, SDL_Event *event)
 	}
 
 	if (data->enabled && data->callback) {
-		data->callback(dev, row, column, pressed);
+		data->callback(data->dev, row, column, pressed);
 	}
 	return 1;
 }
 
-static int sdl_configure(struct device *dev, kscan_callback_t callback)
+static int sdl_configure(const struct device *dev, kscan_callback_t callback)
 {
-	struct sdl_data *data = dev->driver_data;
+	struct sdl_data *data = dev->data;
 
 	if (!callback) {
 		LOG_ERR("Callback is null");
 		return -EINVAL;
 	}
-	LOG_DBG("%s: set callback", dev->config->name);
+	LOG_DBG("%s: set callback", dev->name);
 
 	data->callback = callback;
 
 	return 0;
 }
 
-static int sdl_enable_callback(struct device *dev)
+static int sdl_enable_callback(const struct device *dev)
 {
-	struct sdl_data *data = dev->driver_data;
+	struct sdl_data *data = dev->data;
 
-	LOG_DBG("%s: enable cb", dev->config->name);
+	LOG_DBG("%s: enable cb", dev->name);
 	data->enabled = true;
 	return 0;
 }
 
-static int sdl_disable_callback(struct device *dev)
+static int sdl_disable_callback(const struct device *dev)
 {
-	struct sdl_data *data = dev->driver_data;
+	struct sdl_data *data = dev->data;
 
-	LOG_DBG("%s: disable cb", dev->config->name);
+	LOG_DBG("%s: disable cb", dev->name);
 	data->enabled = false;
 	return 0;
 }
 
-static int sdl_init(struct device *dev)
+static int sdl_init(const struct device *dev)
 {
-	LOG_INF("Init '%s' device", dev->config->name);
-	SDL_AddEventWatch(sdl_filter, dev);
+	struct sdl_data *data = dev->data;
+
+	data->dev = dev;
+
+	LOG_INF("Init '%s' device", dev->name);
+	SDL_AddEventWatch(sdl_filter, data);
 
 	return 0;
 }

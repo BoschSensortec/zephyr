@@ -11,7 +11,7 @@
 
 #define BME280 DT_INST(0, bosch_bme280)
 
-#if DT_HAS_NODE(BME280)
+#if DT_NODE_HAS_STATUS(BME280, okay)
 #define BME280_LABEL DT_LABEL(BME280)
 #else
 #error Your devicetree has no enabled nodes with compatible "bosch,bme280"
@@ -20,7 +20,7 @@
 
 void main(void)
 {
-	struct device *dev = device_get_binding(BME280_LABEL);
+	const struct device *dev = device_get_binding(BME280_LABEL);
 
 	if (dev == NULL) {
 		printk("No device \"%s\" found; did initialization fail?\n",

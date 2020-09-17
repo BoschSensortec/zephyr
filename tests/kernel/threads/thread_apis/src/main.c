@@ -37,6 +37,8 @@ extern void test_k_thread_foreach(void);
 extern void test_threads_cpu_mask(void);
 extern void test_threads_suspend_timeout(void);
 extern void test_threads_suspend(void);
+extern void test_abort_from_isr(void);
+extern void test_essential_thread_abort(void);
 
 struct k_thread tdata;
 #define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACKSIZE)
@@ -282,6 +284,7 @@ enum control_method {
 	NO_WAIT,
 	SELF_ABORT,
 	OTHER_ABORT,
+	OTHER_ABORT_TIMEOUT,
 	ALREADY_EXIT,
 	ISR_ALREADY_EXIT,
 	ISR_RUNNING
@@ -295,6 +298,7 @@ void join_entry(void *p1, void *p2, void *p3)
 	case TIMEOUT:
 	case NO_WAIT:
 	case OTHER_ABORT:
+	case OTHER_ABORT_TIMEOUT:
 	case ISR_RUNNING:
 		printk("join_thread: sleeping forever\n");
 		k_sleep(K_FOREVER);
@@ -313,14 +317,16 @@ void control_entry(void *p1, void *p2, void *p3)
 	k_thread_abort(&join_thread);
 }
 
-void do_join_from_isr(void *arg)
+void do_join_from_isr(const void *arg)
 {
-	int *ret = arg;
+	int *ret = (int *)arg;
 
 	printk("isr: joining join_thread\n");
 	*ret = k_thread_join(&join_thread, K_NO_WAIT);
 	printk("isr: k_thread_join() returned with %d\n", *ret);
 }
+
+#define JOIN_TIMEOUT_MS	100
 
 int join_scenario(enum control_method m)
 {
@@ -338,6 +344,9 @@ int join_scenario(enum control_method m)
 		/* Let join_thread run first */
 		k_msleep(50);
 		break;
+	case OTHER_ABORT_TIMEOUT:
+		timeout = K_MSEC(JOIN_TIMEOUT_MS);
+		__fallthrough;
 	case OTHER_ABORT:
 		printk("ztest_thread: create control_thread\n");
 		k_thread_create(&control_thread, control_stack, STACK_SIZE,
@@ -356,7 +365,7 @@ int join_scenario(enum control_method m)
 	}
 
 	if (m == ISR_ALREADY_EXIT || m == ISR_RUNNING) {
-		irq_offload(do_join_from_isr, &ret);
+		irq_offload(do_join_from_isr, (const void *)&ret);
 	} else {
 		printk("ztest_thread: joining join_thread\n");
 		ret = k_thread_join(&join_thread, timeout);
@@ -366,12 +375,17 @@ int join_scenario(enum control_method m)
 	if (ret != 0) {
 		k_thread_abort(&join_thread);
 	}
+	if (m == OTHER_ABORT || m == OTHER_ABORT_TIMEOUT) {
+		k_thread_join(&control_thread, K_FOREVER);
+	}
 
 	return ret;
 }
 
 void test_thread_join(void)
 {
+	int64_t interval;
+
 #ifdef CONFIG_USERSPACE
 	/* scenario: thread never started */
 	zassert_equal(k_thread_join(&join_thread, K_FOREVER), 0,
@@ -381,6 +395,13 @@ void test_thread_join(void)
 	zassert_equal(join_scenario(NO_WAIT), -EBUSY, "failed no-wait case");
 	zassert_equal(join_scenario(SELF_ABORT), 0, "failed self-abort case");
 	zassert_equal(join_scenario(OTHER_ABORT), 0, "failed other-abort case");
+
+	interval = k_uptime_get();
+	zassert_equal(join_scenario(OTHER_ABORT_TIMEOUT), 0,
+		      "failed other-abort case with timeout");
+	interval = k_uptime_get() - interval;
+	zassert_true(interval < JOIN_TIMEOUT_MS, "join took too long (%lld ms)",
+		     interval);
 	zassert_equal(join_scenario(ALREADY_EXIT), 0,
 		      "failed already exit case");
 
@@ -467,6 +488,7 @@ void test_main(void)
 			 ztest_unit_test(test_abort_handler),
 			 ztest_1cpu_unit_test(test_delayed_thread_abort),
 			 ztest_unit_test(test_essential_thread_operation),
+			 ztest_unit_test(test_essential_thread_abort),
 			 ztest_unit_test(test_systhreads_main),
 			 ztest_unit_test(test_systhreads_idle),
 			 ztest_1cpu_unit_test(test_customdata_get_set_coop),
@@ -480,7 +502,8 @@ void test_main(void)
 			 ztest_unit_test(test_threads_suspend),
 			 ztest_user_unit_test(test_thread_join),
 			 ztest_unit_test(test_thread_join_isr),
-			 ztest_user_unit_test(test_thread_join_deadlock)
+			 ztest_user_unit_test(test_thread_join_deadlock),
+			 ztest_unit_test(test_abort_from_isr)
 			 );
 
 	ztest_run_test_suite(threads_lifecycle);

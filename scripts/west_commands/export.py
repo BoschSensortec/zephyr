@@ -3,10 +3,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+from pathlib import Path
+from shutil import rmtree
 
 from west.commands import WestCommand
+from west import log
 
-from pathlib import PurePath
 from zcmake import run_cmake
 
 EXPORT_DESCRIPTION = '''\
@@ -39,38 +41,28 @@ class ZephyrExport(WestCommand):
         return parser
 
     def do_run(self, args, unknown_args):
-        zephyr_config_package_path = PurePath(__file__).parents[2] \
-            / 'share' / 'zephyr-package' / 'cmake'
+        # The 'share' subdirectory of the top level zephyr repository.
+        share = Path(__file__).parents[2] / 'share'
 
-        cmake_args = ['-S', f'{zephyr_config_package_path}',
-                      '-B', f'{zephyr_config_package_path}']
-        lines = run_cmake(cmake_args, capture_output=True)
+        run_cmake_export(share / 'zephyr-package' / 'cmake')
+        run_cmake_export(share / 'zephyrunittest-package' / 'cmake')
 
-        # Let's clean up, as Zephyr has now been exported, and we no longer
-        # need the generated files.
-        cmake_args = ['--build', f'{zephyr_config_package_path}',
-                      '--target', 'pristine']
-        run_cmake(cmake_args, capture_output=True)
+def run_cmake_export(path):
+    # Run a package installation script.
+    #
+    # Filtering out lines that start with -- ignores the normal
+    # CMake status messages and instead only prints the important
+    # information.
 
-        # Let's ignore the normal CMake printing and instead only print
-        # the important information.
-        msg = [line for line in lines if not line.startswith('-- ')]
-        print('\n'.join(msg))
+    lines = run_cmake(['-P', str(path / 'zephyr_export.cmake')],
+                      capture_output=True)
+    msg = [line for line in lines if not line.startswith('-- ')]
+    log.inf('\n'.join(msg))
 
-        zephyr_unittest_config_package_path = PurePath(__file__).parents[2] \
-            / 'share' / 'zephyrunittest-package' / 'cmake'
-
-        cmake_args = ['-S', f'{zephyr_unittest_config_package_path}',
-                      '-B', f'{zephyr_unittest_config_package_path}']
-        lines = run_cmake(cmake_args, capture_output=True)
-
-        # Let's clean up, as Zephyr has now been exported, and we no longer
-        # need the generated files.
-        cmake_args = ['--build', f'{zephyr_unittest_config_package_path}',
-                      '--target', 'pristine']
-        run_cmake(cmake_args, capture_output=True)
-
-        # Let's ignore the normal CMake printing and instead only print
-        # the important information.
-        msg = [line for line in lines if not line.startswith('-- ')]
-        print('\n'.join(msg))
+def remove_if_exists(pathobj):
+    if pathobj.is_file():
+        log.inf(f'- removing: {pathobj}')
+        pathobj.unlink()
+    elif pathobj.is_dir():
+        log.inf(f'- removing: {pathobj}')
+        rmtree(pathobj)

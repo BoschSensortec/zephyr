@@ -8,28 +8,28 @@
 #include <drivers/pinmux.h>
 #include <fsl_port.h>
 
-static int twr_kv58f220m_pinmux_init(struct device *dev)
+static int twr_kv58f220m_pinmux_init(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 
 #ifdef CONFIG_PINMUX_MCUX_PORTA
-	__unused struct device *porta =
+	__unused const struct device *porta =
 		device_get_binding(CONFIG_PINMUX_MCUX_PORTA_NAME);
 #endif
 #ifdef CONFIG_PINMUX_MCUX_PORTB
-	__unused struct device *portb =
+	__unused const struct device *portb =
 		device_get_binding(CONFIG_PINMUX_MCUX_PORTB_NAME);
 #endif
 #ifdef CONFIG_PINMUX_MCUX_PORTC
-	__unused struct device *portc =
+	__unused const struct device *portc =
 		device_get_binding(CONFIG_PINMUX_MCUX_PORTC_NAME);
 #endif
 #ifdef CONFIG_PINMUX_MCUX_PORTD
-	__unused struct device *portd =
+	__unused const struct device *portd =
 		device_get_binding(CONFIG_PINMUX_MCUX_PORTD_NAME);
 #endif
 #ifdef CONFIG_PINMUX_MCUX_PORTE
-	__unused struct device *porte =
+	__unused const struct device *porte =
 		device_get_binding(CONFIG_PINMUX_MCUX_PORTE_NAME);
 #endif
 
@@ -49,7 +49,7 @@ static int twr_kv58f220m_pinmux_init(struct device *dev)
 	pinmux_pin_set(portc, 18, PORT_PCR_MUX(kPORT_MuxAsGpio));
 	pinmux_pin_set(portc, 19, PORT_PCR_MUX(kPORT_MuxAsGpio));
 
-#ifdef CONFIG_I2C_1
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay) && CONFIG_I2C
 	/* I2C1 SCL, SDA */
 	pinmux_pin_set(portd, 8, PORT_PCR_MUX(kPORT_MuxAlt2)
 					| PORT_PCR_ODE_MASK);
@@ -57,7 +57,7 @@ static int twr_kv58f220m_pinmux_init(struct device *dev)
 					| PORT_PCR_ODE_MASK);
 #endif
 
-#if DT_HAS_NODE(DT_NODELABEL(uart0))
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(uart0), okay) && CONFIG_SERIAL
 	/* UART0 RX, TX */
 	pinmux_pin_set(portb, 0, PORT_PCR_MUX(kPORT_MuxAlt7));
 	pinmux_pin_set(portb, 1, PORT_PCR_MUX(kPORT_MuxAlt7));

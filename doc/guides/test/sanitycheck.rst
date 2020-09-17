@@ -12,7 +12,7 @@ boards and will run in an emulated environment if available for the
 architecture or configuration being tested.
 
 In normal use, sanitycheck runs a limited set of kernel tests (inside
-an emulator).  Because of its limited text execution coverage, sanitycheck
+an emulator).  Because of its limited test execution coverage, sanitycheck
 cannot guarantee local changes will succeed in the full build
 environment, but it does sufficient testing by building samples and
 tests for different boards and different configurations to help keep the
@@ -103,9 +103,9 @@ identifier:
   ``cmake``::
 
      # with west
-     west build -b tinytile
+     west build -b reel_board
      # with cmake
-     cmake -DBOARD=tinytile ..
+     cmake -DBOARD=reel_board ..
 
 name:
   The actual name of the board as it appears in marketing material.
@@ -154,6 +154,8 @@ testing:
   ignore_tags:
     Do not attempt to build (and therefore run) tests marked with this list of
     tags.
+  only_tags:
+    Only execute tests with this list of tags on a specific platform.
 
 Test Cases
 **********
@@ -201,14 +203,14 @@ explained in this document.
         tests:
           bluetooth.gatt:
             build_only: true
-            platform_whitelist: qemu_cortex_m3 qemu_x86
+            platform_allow: qemu_cortex_m3 qemu_x86
             tags: bluetooth
           bluetooth.gatt.br:
             build_only: true
             extra_args: CONF_FILE="prj_br.conf"
             filter: not CONFIG_DEBUG
             platform_exclude: up_squared
-            platform_whitelist: qemu_cortex_m3 qemu_x86
+            platform_allow: qemu_cortex_m3 qemu_x86
             tags: bluetooth
 
 
@@ -296,14 +298,23 @@ timeout: <number of seconds>
     Length of time to run test in QEMU before automatically killing it.
     Default to 60 seconds.
 
-arch_whitelist: <list of arches, such as x86, arm, arc>
+arch_allow: <list of arches, such as x86, arm, arc>
     Set of architectures that this test case should only be run for.
 
 arch_exclude: <list of arches, such as x86, arm, arc>
     Set of architectures that this test case should not run on.
 
-platform_whitelist: <list of platforms>
-    Set of platforms that this test case should only be run for.
+platform_allow: <list of platforms>
+    Set of platforms that this test case should only be run for. Do not use
+    this option to limit testing or building in CI due to time or resource
+    constraints, this option should only be used if the test or sample can
+    only be run on the allowed platform and nothing else.
+
+integration_platforms: <YML list of platforms/boards>
+    This option limits the scope to the listed platforms when sanitycheck is
+    invoked with the --integration option. Use this instead of
+    platform_allow if the goal is to limit scope due to timing or
+    resource constraints.
 
 platform_exclude: <list of platforms>
     Set of platforms that this test case should not run on.
@@ -354,8 +365,9 @@ harness_config: <harness configuration options>
         specific test setup and board selection logic to pick the particular
         board(s) out of multiple boards that fulfill the dependency in an
         automation setup based on "fixture" keyword. Some sample fixture names
-        are fixture_i2c_hts221, fixture_i2c_bme280, fixture_i2c_FRAM,
-        fixture_ble_fw and fixture_gpio_loop.
+        are i2c_hts221, i2c_bme280, i2c_FRAM, ble_fw and gpio_loop.
+
+        Only one fixture can be defined per testcase.
 
     The following is an example yaml file with a few harness_config options.
 
@@ -372,7 +384,7 @@ harness_config: <harness configuration options>
              regex:
                - "Temperature:(.*)C"
                - "Relative Humidity:(.*)%"
-             fixture: fixture_i2c_hts221
+             fixture: i2c_hts221
          tests:
            test:
              tags: sensors
@@ -425,7 +437,7 @@ filter: <expression>
         not (right associative)
         all comparison operators (non-associative)
 
-    arch_whitelist, arch_exclude, platform_whitelist, platform_exclude
+    arch_allow, arch_exclude, platform_allow, platform_exclude
     are all syntactic sugar for these expressions. For instance
 
         arch_exclude = x86 arc
@@ -457,6 +469,16 @@ To load arguments from a file, write '+' before the file name, e.g.,
 line break instead of white spaces.
 
 Most everyday users will run with no arguments.
+
+Running in Integration Mode
+***************************
+
+This mode is used in continuous integration (CI) and other automated
+environments used to give developers fast feedback on changes. The mode can
+be activated using the --integration option of sanitycheck and narrows down
+the scope of builds and tests if applicable to platforms defined under the
+integration keyword in the testcase definition file (testcase.yaml and
+sample.yaml).
 
 
 Running Tests on Hardware
@@ -545,6 +567,70 @@ on those platforms.
   with the hardware map features. Boards that require other runners to flash the
   Zephyr binary are still work in progress.
 
-To produce test reports, use the ``--detailed-report FILENAME`` option which will
-generate an XML file using the JUNIT syntax. This file can be used to generate
-other reports, for example using ``junit2html`` which can be installed via PIP.
+Fixtures
++++++++++
+
+Some tests require additional setup or special wiring specific to the test.
+Running the tests without this setup or test fixture may fail. A testcase can
+specify the fixture it needs which can then be matched with hardware capability
+of a board and the fixtures it supports via the command line or using the hardware
+map file.
+
+Fixtures are defined in the hardware map file as a list::
+
+      - available: true
+        connected: true
+        fixtures:
+          - gpio_loopback
+        id: 0240000026334e450015400f5e0e000b4eb1000097969900
+        platform: frdm_k64f
+        product: DAPLink CMSIS-DAP
+        runner: pyocd
+        serial: /dev/ttyACM9
+
+When running `sanitycheck` with ``--device-testing``, the configured fixture
+in the hardware map file will be matched to testcases requesting the same fixtures
+and these tests will be executed on the boards that provide this fixture.
+
+.. figure:: fixtures.svg
+   :figclass: align-center
+
+Notes
++++++
+
+It may be useful to annotate board descriptions in the hardware map file
+with additional information.  Use the "notes" keyword to do this.  For
+example::
+
+    - available: true
+      connected: false
+      fixtures:
+        - gpio_loopback
+      id: 000683290670
+      notes: An nrf5340pdk_nrf5340 is detected as an nrf52840dk_nrf52840 with no serial
+        port, and three serial ports with an unknown platform.  The board id of the serial
+        ports is not the same as the board id of the the development kit.  If you regenerate
+        this file you will need to update serial to reference the third port, and platform
+        to nrf5340pdk_nrf5340_cpuapp or another supported board target.
+      platform: nrf52840dk_nrf52840
+      product: J-Link
+      runner: jlink
+      serial: null
+
+Overriding Board Identifier
++++++++++++++++++++++++++++
+
+When (re-)generated the hardware map file will contain an "id" keyword
+that serves as the argument to ``--board-id`` when flashing.  In some
+cases the detected ID is not the correct one to use, for example when
+using an external J-Link probe.  The "probe_id" keyword overrides the
+"id" keyword for this purpose.   For example::
+
+    - available: true
+      connected: false
+      id: 0229000005d9ebc600000000000000000000000097969905
+      platform: mimxrt1060_evk
+      probe_id: 000609301751
+      product: DAPLink CMSIS-DAP
+      runner: jlink
+      serial: null

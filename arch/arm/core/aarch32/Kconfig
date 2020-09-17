@@ -3,13 +3,6 @@
 # Copyright (c) 2015 Wind River Systems, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
-if !ARM64
-
-config CPU_CORTEX
-	bool
-	help
-	  This option signifies the use of a CPU of the Cortex family.
-
 config CPU_CORTEX_M
 	bool
 	select CPU_CORTEX
@@ -24,6 +17,9 @@ config CPU_CORTEX_M
 	select ARCH_HAS_RAMFUNC_SUPPORT
 	select ARCH_HAS_NESTED_EXCEPTION_DETECTION
 	select SWAP_NONATOMIC
+	select ARCH_HAS_EXTRA_EXCEPTION_INFO
+	select ARCH_HAS_TIMING_FUNCTIONS if CPU_CORTEX_M_HAS_DWT
+	imply XIP
 	help
 	  This option signifies the use of a CPU of the Cortex-M family.
 
@@ -220,7 +216,7 @@ config ARM_NONSECURE_FIRMWARE
 choice
 	prompt "Floating point ABI"
 	default FP_HARDABI
-	depends on FLOAT
+	depends on FPU
 
 config FP_HARDABI
 	bool "Floating point Hard ABI"
@@ -239,5 +235,3 @@ endchoice
 
 rsource "cortex_m/Kconfig"
 rsource "cortex_a_r/Kconfig"
-
-endif # !ARM64

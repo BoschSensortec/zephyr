@@ -60,3 +60,16 @@ indent_size = 2
 # Makefile
 [Makefile]
 indent_style = tab
+
+# Device tree
+[*.{dts,dtsi,overlay}]
+indent_style = tab
+indent_size = 8
+
+# Git commit messages
+[COMMIT_EDITMSG]
+max_line_length = 72
+
+# Kconfig
+[Kconfig*]
+indent_style=tab

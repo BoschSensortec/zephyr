@@ -11,8 +11,9 @@
 
 #include <toolchain.h>
 #include <linker/sections.h>
+#include <arch/cpu.h>
 #include "vector_table.h"
-#include "macro.inc"
+#include "macro_priv.inc"
 
 _ASM_FILE_PROLOGUE
 
@@ -89,7 +90,7 @@ SECTION_SUBSEC_FUNC(exc_vector_table,_vector_table_section,_vector_table)
 
 	/* Current EL with SPx / SError */
 	.align 7
-	z_arm64_enter_exc
+	z_arm64_enter_exc x0, x1, x2
 
 	mov	x1, sp
 	mov	x0, #0 /* K_ERR_CPU_EXCEPTION */

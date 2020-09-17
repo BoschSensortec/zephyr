@@ -101,7 +101,7 @@ typedef struct _ready_q _ready_q_t;
 
 struct _cpu {
 	/* nested interrupt count */
-	u32_t nested;
+	uint32_t nested;
 
 	/* interrupt stack pointer base */
 	char *irq_stack;
@@ -122,36 +122,18 @@ struct _cpu {
 	int slice_ticks;
 #endif
 
-	u8_t id;
+	uint8_t id;
 
 #ifdef CONFIG_SMP
 	/* True when _current is allowed to context switch */
-	u8_t swap_ok;
+	uint8_t swap_ok;
 #endif
 };
 
 typedef struct _cpu _cpu_t;
 
 struct z_kernel {
-	/* For compatibility with pre-SMP code, union the first CPU
-	 * record with the legacy fields so code can continue to use
-	 * the "_kernel.XXX" expressions and assembly offsets.
-	 */
-	union {
-		struct _cpu cpus[CONFIG_MP_NUM_CPUS];
-#ifndef CONFIG_SMP
-		struct {
-			/* nested interrupt count */
-			u32_t nested;
-
-			/* interrupt stack pointer base */
-			char *irq_stack;
-
-			/* currently scheduled thread */
-			struct k_thread *current;
-		};
-#endif
-	};
+	struct _cpu cpus[CONFIG_MP_NUM_CPUS];
 
 #ifdef CONFIG_SYS_CLOCK_EXISTS
 	/* queue of timeouts */
@@ -159,7 +141,7 @@ struct z_kernel {
 #endif
 
 #ifdef CONFIG_SYS_POWER_MANAGEMENT
-	s32_t idle; /* Number of ticks for kernel idling */
+	int32_t idle; /* Number of ticks for kernel idling */
 #endif
 
 	/*
@@ -168,7 +150,7 @@ struct z_kernel {
 	 */
 	struct _ready_q ready_q;
 
-#ifdef CONFIG_FP_SHARING
+#ifdef CONFIG_FPU_SHARING
 	/*
 	 * A 'current_sse' field does not exist in addition to the 'current_fp'
 	 * field since it's not possible to divide the IA-32 non-integer
@@ -204,7 +186,7 @@ bool z_smp_cpu_mobile(void);
 
 #else
 #define _current_cpu (&_kernel.cpus[0])
-#define _current _kernel.current
+#define _current _kernel.cpus[0].current
 #endif
 
 #define _timeout_q _kernel.timeout_q
@@ -238,8 +220,13 @@ typedef void (*_timeout_func_t)(struct _timeout *t);
 
 struct _timeout {
 	sys_dnode_t node;
-	s32_t dticks;
 	_timeout_func_t fn;
+#ifdef CONFIG_TIMEOUT_64BIT
+	/* Can't use k_ticks_t for header dependency reasons */
+	int64_t dticks;
+#else
+	int32_t dticks;
+#endif
 };
 
 /* kernel spinlock type */

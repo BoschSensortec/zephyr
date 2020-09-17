@@ -7,6 +7,9 @@
 #include <init.h>
 #include <power/power.h>
 
+#include <driverlib/pwr_ctrl.h>
+#include <driverlib/sys_ctrl.h>
+
 #include <ti/drivers/Power.h>
 #include <ti/drivers/power/PowerCC26X2.h>
 
@@ -38,14 +41,15 @@ extern PowerCC26X2_ModuleState PowerCC26X2_module;
  * Power state mapping:
  * SYS_POWER_STATE_SLEEP_1: Idle
  * SYS_POWER_STATE_SLEEP_2: Standby
+ * SYS_POWER_STATE_DEEP_SLEEP_1: Shutdown
  */
 
 /* Invoke Low Power/System Off specific Tasks */
 void sys_set_power_state(enum power_states state)
 {
 #ifdef CONFIG_SYS_POWER_SLEEP_STATES
-	u32_t modeVIMS;
-	u32_t constraints;
+	uint32_t modeVIMS;
+	uint32_t constraints;
 #endif
 
 	LOG_DBG("SoC entering power state %d", state);
@@ -97,6 +101,12 @@ void sys_set_power_state(enum power_states state)
 			&PowerCC26X2_module.clockObj));
 		break;
 #endif
+
+#ifdef CONFIG_SYS_POWER_DEEP_SLEEP_STATES
+	case SYS_POWER_STATE_DEEP_SLEEP_1:
+		Power_shutdown(0, 0);
+		break;
+#endif
 	default:
 		LOG_DBG("Unsupported power state %u", state);
 		break;
@@ -116,7 +126,7 @@ void _sys_pm_power_state_exit_post_ops(enum power_states state)
 }
 
 /* Initialize TI Power module */
-static int power_initialize(struct device *dev)
+static int power_initialize(const struct device *dev)
 {
 	unsigned int ret;
 
@@ -125,6 +135,23 @@ static int power_initialize(struct device *dev)
 	ret = irq_lock();
 	Power_init();
 	irq_unlock(ret);
+
+	return 0;
+}
+
+/*
+ * Unlatch IO pins after waking up from shutdown
+ * This needs to be called during POST_KERNEL in order for "Booting Zephyr"
+ * message to show up
+ */
+static int unlatch_pins(const struct device *dev)
+{
+	/* Get the reason for reset. */
+	uint32_t rSrc = SysCtrlResetSourceGet();
+
+	if (rSrc == RSTSRC_WAKEUP_FROM_SHUTDOWN) {
+		PowerCtrlPadSleepDisable();
+	}
 
 	return 0;
 }
@@ -154,3 +181,4 @@ void PowerCC26XX_schedulerRestore(void)
 }
 
 SYS_INIT(power_initialize, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+SYS_INIT(unlatch_pins, POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY);

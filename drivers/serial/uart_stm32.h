@@ -19,14 +19,16 @@ struct uart_stm32_config {
 	struct stm32_pclken pclken;
 	/* initial hardware flow control, 1 for RTS/CTS */
 	bool hw_flow_control;
+	/* initial parity, 0 for none, 1 for odd, 2 for even */
+	int  parity;
 };
 
 /* driver data */
 struct uart_stm32_data {
 	/* Baud rate */
-	u32_t baud_rate;
+	uint32_t baud_rate;
 	/* clock device */
-	struct device *clock;
+	const struct device *clock;
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	uart_irq_callback_user_data_t user_cb;
 	void *user_data;

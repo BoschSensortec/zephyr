@@ -54,14 +54,14 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 /* Needs to be aligned with the SPI master buffer size */
 #define SPI_MAX_MSG_LEN        255
 
-static u8_t rxmsg[SPI_MAX_MSG_LEN];
+static uint8_t rxmsg[SPI_MAX_MSG_LEN];
 static struct spi_buf rx;
 const static struct spi_buf_set rx_bufs = {
 	.buffers = &rx,
 	.count = 1,
 };
 
-static u8_t txmsg[SPI_MAX_MSG_LEN];
+static uint8_t txmsg[SPI_MAX_MSG_LEN];
 static struct spi_buf tx;
 const static struct spi_buf_set tx_bufs = {
 	.buffers = &tx,
@@ -71,32 +71,11 @@ const static struct spi_buf_set tx_bufs = {
 /* HCI buffer pools */
 #define CMD_BUF_SIZE BT_BUF_RX_SIZE
 
-NET_BUF_POOL_FIXED_DEFINE(cmd_tx_pool, CONFIG_BT_HCI_CMD_COUNT, CMD_BUF_SIZE,
-			  NULL);
-
-#if defined(CONFIG_BT_CTLR)
-#define BT_L2CAP_MTU (CONFIG_BT_CTLR_TX_BUFFER_SIZE - \
-		      BT_L2CAP_HDR_SIZE)
-#else
-#define BT_L2CAP_MTU 65 /* 64-byte public key + opcode */
-#endif /* CONFIG_BT_CTLR */
-
-/* Data size needed for ACL buffers */
-#define BT_BUF_ACL_SIZE BT_L2CAP_BUF_SIZE(BT_L2CAP_MTU)
-
-#if defined(CONFIG_BT_CTLR_TX_BUFFERS)
-#define TX_BUF_COUNT CONFIG_BT_CTLR_TX_BUFFERS
-#else
-#define TX_BUF_COUNT 6
-#endif
-
-NET_BUF_POOL_FIXED_DEFINE(acl_tx_pool, TX_BUF_COUNT, BT_BUF_ACL_SIZE, NULL);
-
-static struct device *spi_hci_dev;
+static const struct device *spi_hci_dev;
 static struct spi_config spi_cfg = {
 	.operation = SPI_WORD_SET(8) | SPI_OP_MODE_SLAVE,
 };
-static struct device *gpio_dev;
+static const struct device *gpio_dev;
 static K_THREAD_STACK_DEFINE(bt_tx_thread_stack, CONFIG_BT_HCI_TX_STACK_SIZE);
 static struct k_thread bt_tx_thread_data;
 
@@ -105,9 +84,9 @@ static K_SEM_DEFINE(sem_spi_tx, 0, 1);
 
 static inline int spi_send(struct net_buf *buf)
 {
-	u8_t header_master[5] = { 0 };
-	u8_t header_slave[5] = { READY_NOW, SANITY_CHECK,
-				 0x00, 0x00, 0x00 };
+	uint8_t header_master[5] = { 0 };
+	uint8_t header_slave[5] = { READY_NOW, SANITY_CHECK,
+				    0x00, 0x00, 0x00 };
 	int ret;
 
 	LOG_DBG("buf %p type %u len %u", buf, bt_buf_get_type(buf), buf->len);
@@ -165,12 +144,16 @@ static inline int spi_send(struct net_buf *buf)
 
 static void bt_tx_thread(void *p1, void *p2, void *p3)
 {
-	u8_t header_master[5];
-	u8_t header_slave[5] = { READY_NOW, SANITY_CHECK,
-				 0x00, 0x00, 0x00 };
+	uint8_t header_master[5];
+	uint8_t header_slave[5] = { READY_NOW, SANITY_CHECK,
+				    0x00, 0x00, 0x00 };
 	struct net_buf *buf = NULL;
-	struct bt_hci_cmd_hdr cmd_hdr;
-	struct bt_hci_acl_hdr acl_hdr;
+
+	union {
+		struct bt_hci_cmd_hdr *cmd_hdr;
+		struct bt_hci_acl_hdr *acl_hdr;
+	} hci_hdr;
+	hci_hdr.cmd_hdr = (struct bt_hci_cmd_hdr *)&rxmsg[1];
 	int ret;
 
 	ARG_UNUSED(p1);
@@ -216,30 +199,24 @@ static void bt_tx_thread(void *p1, void *p2, void *p3)
 
 		switch (rxmsg[PACKET_TYPE]) {
 		case HCI_CMD:
-			memcpy(&cmd_hdr, &rxmsg[1], sizeof(cmd_hdr));
-
-			buf = net_buf_alloc(&cmd_tx_pool, K_NO_WAIT);
+			buf = bt_buf_get_tx(BT_BUF_CMD, K_NO_WAIT,
+					    hci_hdr.cmd_hdr,
+					    sizeof(*hci_hdr.cmd_hdr));
 			if (buf) {
-				bt_buf_set_type(buf, BT_BUF_CMD);
-				net_buf_add_mem(buf, &cmd_hdr,
-						sizeof(cmd_hdr));
 				net_buf_add_mem(buf, &rxmsg[4],
-						cmd_hdr.param_len);
+						hci_hdr.cmd_hdr->param_len);
 			} else {
 				LOG_ERR("No available command buffers!");
 				continue;
 			}
 			break;
 		case HCI_ACL:
-			memcpy(&acl_hdr, &rxmsg[1], sizeof(acl_hdr));
-
-			buf = net_buf_alloc(&acl_tx_pool, K_NO_WAIT);
+			buf = bt_buf_get_tx(BT_BUF_ACL_OUT, K_NO_WAIT,
+					    hci_hdr.acl_hdr,
+					    sizeof(*hci_hdr.acl_hdr));
 			if (buf) {
-				bt_buf_set_type(buf, BT_BUF_ACL_OUT);
-				net_buf_add_mem(buf, &acl_hdr,
-						sizeof(acl_hdr));
 				net_buf_add_mem(buf, &rxmsg[5],
-						sys_le16_to_cpu(acl_hdr.len));
+						sys_le16_to_cpu(hci_hdr.acl_hdr->len));
 			} else {
 				LOG_ERR("No available ACL buffers!");
 				continue;
@@ -259,14 +236,12 @@ static void bt_tx_thread(void *p1, void *p2, void *p3)
 			net_buf_unref(buf);
 		}
 
-		log_stack_usage(&bt_tx_thread_data);
-
 		/* Make sure other threads get a chance to run */
 		k_yield();
 	}
 }
 
-static int hci_spi_init(struct device *unused)
+static int hci_spi_init(const struct device *unused)
 {
 	ARG_UNUSED(unused);
 
@@ -315,8 +290,7 @@ void main(void)
 	k_thread_name_set(&bt_tx_thread_data, "bt_tx_thread");
 
 	/* Send a vendor event to announce that the slave is initialized */
-	buf = net_buf_alloc(&cmd_tx_pool, K_FOREVER);
-	bt_buf_set_type(buf, BT_BUF_EVT);
+	buf = bt_buf_get_rx(BT_BUF_EVT, K_FOREVER);
 	evt_hdr = net_buf_add(buf, sizeof(*evt_hdr));
 	evt_hdr->evt = BT_HCI_EVT_VENDOR;
 	evt_hdr->len = 2U;

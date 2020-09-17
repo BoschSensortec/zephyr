@@ -16,7 +16,7 @@
 LOG_MODULE_REGISTER(main);
 
 #if defined(CONFIG_VIDEO_MCUX_CSI)
-#define VIDEO_CAPTURE_DEV DT_VIDEO_MCUX_CSI_NAME
+#define VIDEO_CAPTURE_DEV DT_LABEL(DT_INST(0, nxp_imx_csi))
 #else
 #define VIDEO_CAPTURE_DEV "VIDEO_SW_GENERATOR"
 #endif
@@ -46,7 +46,7 @@ void main(void)
 	struct video_buffer *buffers[2], *vbuf;
 	int i, ret, sock, client;
 	struct video_format fmt;
-	struct device *video;
+	const struct device *video;
 
 	/* Prepare Network */
 	(void)memset(&addr, 0, sizeof(addr));

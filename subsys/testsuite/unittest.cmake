@@ -45,8 +45,10 @@ else()
 
 if(M64_MODE)
 set (CMAKE_C_FLAGS "-m64")
+set (CMAKE_CXX_FLAGS "-m64")
 else()
 set (CMAKE_C_FLAGS "-m32") #deprecated on macOS
+set (CMAKE_CXX_FLAGS "-m32") #deprecated on macOS
 endif(M64_MODE)
 
 endif()
@@ -70,6 +72,10 @@ if(COVERAGE)
     -fno-inline
     -fprofile-arcs
     -ftest-coverage
+    )
+
+  target_link_libraries(testbinary PRIVATE
+    -lgcov
     )
 endif()
 

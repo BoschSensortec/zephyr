@@ -23,11 +23,11 @@
 
 LOG_MODULE_REGISTER(LSM6DSL, CONFIG_SENSOR_LOG_LEVEL);
 
-static const u16_t lsm6dsl_odr_map[] = {0, 12, 26, 52, 104, 208, 416, 833,
+static const uint16_t lsm6dsl_odr_map[] = {0, 12, 26, 52, 104, 208, 416, 833,
 					1660, 3330, 6660};
 
 #if defined(LSM6DSL_ACCEL_ODR_RUNTIME) || defined(LSM6DSL_GYRO_ODR_RUNTIME)
-static int lsm6dsl_freq_to_odr_val(u16_t freq)
+static int lsm6dsl_freq_to_odr_val(uint16_t freq)
 {
 	size_t i;
 
@@ -41,7 +41,7 @@ static int lsm6dsl_freq_to_odr_val(u16_t freq)
 }
 #endif
 
-static int lsm6dsl_odr_to_freq_val(u16_t odr)
+static int lsm6dsl_odr_to_freq_val(uint16_t odr)
 {
 	/* for valid index, return value from map */
 	if (odr < ARRAY_SIZE(lsm6dsl_odr_map)) {
@@ -53,10 +53,10 @@ static int lsm6dsl_odr_to_freq_val(u16_t odr)
 }
 
 #ifdef LSM6DSL_ACCEL_FS_RUNTIME
-static const u16_t lsm6dsl_accel_fs_map[] = {2, 16, 4, 8};
-static const u16_t lsm6dsl_accel_fs_sens[] = {1, 8, 2, 4};
+static const uint16_t lsm6dsl_accel_fs_map[] = {2, 16, 4, 8};
+static const uint16_t lsm6dsl_accel_fs_sens[] = {1, 8, 2, 4};
 
-static int lsm6dsl_accel_range_to_fs_val(s32_t range)
+static int lsm6dsl_accel_range_to_fs_val(int32_t range)
 {
 	size_t i;
 
@@ -71,10 +71,10 @@ static int lsm6dsl_accel_range_to_fs_val(s32_t range)
 #endif
 
 #ifdef LSM6DSL_GYRO_FS_RUNTIME
-static const u16_t lsm6dsl_gyro_fs_map[] = {245, 500, 1000, 2000, 125};
-static const u16_t lsm6dsl_gyro_fs_sens[] = {2, 4, 8, 16, 1};
+static const uint16_t lsm6dsl_gyro_fs_map[] = {245, 500, 1000, 2000, 125};
+static const uint16_t lsm6dsl_gyro_fs_sens[] = {2, 4, 8, 16, 1};
 
-static int lsm6dsl_gyro_range_to_fs_val(s32_t range)
+static int lsm6dsl_gyro_range_to_fs_val(int32_t range)
 {
 	size_t i;
 
@@ -88,9 +88,9 @@ static int lsm6dsl_gyro_range_to_fs_val(s32_t range)
 }
 #endif
 
-static inline int lsm6dsl_reboot(struct device *dev)
+static inline int lsm6dsl_reboot(const struct device *dev)
 {
-	struct lsm6dsl_data *data = dev->driver_data;
+	struct lsm6dsl_data *data = dev->data;
 
 	if (data->hw_tf->update_reg(data, LSM6DSL_REG_CTRL3_C,
 				    LSM6DSL_MASK_CTRL3_C_BOOT,
@@ -104,9 +104,9 @@ static inline int lsm6dsl_reboot(struct device *dev)
 	return 0;
 }
 
-static int lsm6dsl_accel_set_fs_raw(struct device *dev, u8_t fs)
+static int lsm6dsl_accel_set_fs_raw(const struct device *dev, uint8_t fs)
 {
-	struct lsm6dsl_data *data = dev->driver_data;
+	struct lsm6dsl_data *data = dev->data;
 
 	if (data->hw_tf->update_reg(data,
 				    LSM6DSL_REG_CTRL1_XL,
@@ -120,9 +120,9 @@ static int lsm6dsl_accel_set_fs_raw(struct device *dev, u8_t fs)
 	return 0;
 }
 
-static int lsm6dsl_accel_set_odr_raw(struct device *dev, u8_t odr)
+static int lsm6dsl_accel_set_odr_raw(const struct device *dev, uint8_t odr)
 {
-	struct lsm6dsl_data *data = dev->driver_data;
+	struct lsm6dsl_data *data = dev->data;
 
 	if (data->hw_tf->update_reg(data,
 				    LSM6DSL_REG_CTRL1_XL,
@@ -136,9 +136,9 @@ static int lsm6dsl_accel_set_odr_raw(struct device *dev, u8_t odr)
 	return 0;
 }
 
-static int lsm6dsl_gyro_set_fs_raw(struct device *dev, u8_t fs)
+static int lsm6dsl_gyro_set_fs_raw(const struct device *dev, uint8_t fs)
 {
-	struct lsm6dsl_data *data = dev->driver_data;
+	struct lsm6dsl_data *data = dev->data;
 
 	if (fs == GYRO_FULLSCALE_125) {
 		if (data->hw_tf->update_reg(data,
@@ -159,9 +159,9 @@ static int lsm6dsl_gyro_set_fs_raw(struct device *dev, u8_t fs)
 	return 0;
 }
 
-static int lsm6dsl_gyro_set_odr_raw(struct device *dev, u8_t odr)
+static int lsm6dsl_gyro_set_odr_raw(const struct device *dev, uint8_t odr)
 {
-	struct lsm6dsl_data *data = dev->driver_data;
+	struct lsm6dsl_data *data = dev->data;
 
 	if (data->hw_tf->update_reg(data,
 				    LSM6DSL_REG_CTRL2_G,
@@ -174,7 +174,7 @@ static int lsm6dsl_gyro_set_odr_raw(struct device *dev, u8_t odr)
 }
 
 #ifdef LSM6DSL_ACCEL_ODR_RUNTIME
-static int lsm6dsl_accel_odr_set(struct device *dev, u16_t freq)
+static int lsm6dsl_accel_odr_set(const struct device *dev, uint16_t freq)
 {
 	int odr;
 
@@ -193,10 +193,10 @@ static int lsm6dsl_accel_odr_set(struct device *dev, u16_t freq)
 #endif
 
 #ifdef LSM6DSL_ACCEL_FS_RUNTIME
-static int lsm6dsl_accel_range_set(struct device *dev, s32_t range)
+static int lsm6dsl_accel_range_set(const struct device *dev, int32_t range)
 {
 	int fs;
-	struct lsm6dsl_data *data = dev->driver_data;
+	struct lsm6dsl_data *data = dev->data;
 
 	fs = lsm6dsl_accel_range_to_fs_val(range);
 	if (fs < 0) {
@@ -214,9 +214,10 @@ static int lsm6dsl_accel_range_set(struct device *dev, s32_t range)
 }
 #endif
 
-static int lsm6dsl_accel_config(struct device *dev, enum sensor_channel chan,
-			    enum sensor_attribute attr,
-			    const struct sensor_value *val)
+static int lsm6dsl_accel_config(const struct device *dev,
+				enum sensor_channel chan,
+				enum sensor_attribute attr,
+				const struct sensor_value *val)
 {
 	switch (attr) {
 #ifdef LSM6DSL_ACCEL_FS_RUNTIME
@@ -236,7 +237,7 @@ static int lsm6dsl_accel_config(struct device *dev, enum sensor_channel chan,
 }
 
 #ifdef LSM6DSL_GYRO_ODR_RUNTIME
-static int lsm6dsl_gyro_odr_set(struct device *dev, u16_t freq)
+static int lsm6dsl_gyro_odr_set(const struct device *dev, uint16_t freq)
 {
 	int odr;
 
@@ -255,10 +256,10 @@ static int lsm6dsl_gyro_odr_set(struct device *dev, u16_t freq)
 #endif
 
 #ifdef LSM6DSL_GYRO_FS_RUNTIME
-static int lsm6dsl_gyro_range_set(struct device *dev, s32_t range)
+static int lsm6dsl_gyro_range_set(const struct device *dev, int32_t range)
 {
 	int fs;
-	struct lsm6dsl_data *data = dev->driver_data;
+	struct lsm6dsl_data *data = dev->data;
 
 	fs = lsm6dsl_gyro_range_to_fs_val(range);
 	if (fs < 0) {
@@ -276,9 +277,10 @@ static int lsm6dsl_gyro_range_set(struct device *dev, s32_t range)
 }
 #endif
 
-static int lsm6dsl_gyro_config(struct device *dev, enum sensor_channel chan,
-			    enum sensor_attribute attr,
-			    const struct sensor_value *val)
+static int lsm6dsl_gyro_config(const struct device *dev,
+			       enum sensor_channel chan,
+			       enum sensor_attribute attr,
+			       const struct sensor_value *val)
 {
 	switch (attr) {
 #ifdef LSM6DSL_GYRO_FS_RUNTIME
@@ -297,9 +299,10 @@ static int lsm6dsl_gyro_config(struct device *dev, enum sensor_channel chan,
 	return 0;
 }
 
-static int lsm6dsl_attr_set(struct device *dev, enum sensor_channel chan,
-			   enum sensor_attribute attr,
-			   const struct sensor_value *val)
+static int lsm6dsl_attr_set(const struct device *dev,
+			    enum sensor_channel chan,
+			    enum sensor_attribute attr,
+			    const struct sensor_value *val)
 {
 	switch (chan) {
 	case SENSOR_CHAN_ACCEL_XYZ:
@@ -314,10 +317,10 @@ static int lsm6dsl_attr_set(struct device *dev, enum sensor_channel chan,
 	return 0;
 }
 
-static int lsm6dsl_sample_fetch_accel(struct device *dev)
+static int lsm6dsl_sample_fetch_accel(const struct device *dev)
 {
-	struct lsm6dsl_data *data = dev->driver_data;
-	u8_t buf[6];
+	struct lsm6dsl_data *data = dev->data;
+	uint8_t buf[6];
 
 	if (data->hw_tf->read_data(data, LSM6DSL_REG_OUTX_L_XL,
 				   buf, sizeof(buf)) < 0) {
@@ -325,20 +328,20 @@ static int lsm6dsl_sample_fetch_accel(struct device *dev)
 		return -EIO;
 	}
 
-	data->accel_sample_x = (s16_t)((u16_t)(buf[0]) |
-				((u16_t)(buf[1]) << 8));
-	data->accel_sample_y = (s16_t)((u16_t)(buf[2]) |
-				((u16_t)(buf[3]) << 8));
-	data->accel_sample_z = (s16_t)((u16_t)(buf[4]) |
-				((u16_t)(buf[5]) << 8));
+	data->accel_sample_x = (int16_t)((uint16_t)(buf[0]) |
+				((uint16_t)(buf[1]) << 8));
+	data->accel_sample_y = (int16_t)((uint16_t)(buf[2]) |
+				((uint16_t)(buf[3]) << 8));
+	data->accel_sample_z = (int16_t)((uint16_t)(buf[4]) |
+				((uint16_t)(buf[5]) << 8));
 
 	return 0;
 }
 
-static int lsm6dsl_sample_fetch_gyro(struct device *dev)
+static int lsm6dsl_sample_fetch_gyro(const struct device *dev)
 {
-	struct lsm6dsl_data *data = dev->driver_data;
-	u8_t buf[6];
+	struct lsm6dsl_data *data = dev->data;
+	uint8_t buf[6];
 
 	if (data->hw_tf->read_data(data, LSM6DSL_REG_OUTX_L_G,
 				   buf, sizeof(buf)) < 0) {
@@ -346,21 +349,21 @@ static int lsm6dsl_sample_fetch_gyro(struct device *dev)
 		return -EIO;
 	}
 
-	data->gyro_sample_x = (s16_t)((u16_t)(buf[0]) |
-				((u16_t)(buf[1]) << 8));
-	data->gyro_sample_y = (s16_t)((u16_t)(buf[2]) |
-				((u16_t)(buf[3]) << 8));
-	data->gyro_sample_z = (s16_t)((u16_t)(buf[4]) |
-				((u16_t)(buf[5]) << 8));
+	data->gyro_sample_x = (int16_t)((uint16_t)(buf[0]) |
+				((uint16_t)(buf[1]) << 8));
+	data->gyro_sample_y = (int16_t)((uint16_t)(buf[2]) |
+				((uint16_t)(buf[3]) << 8));
+	data->gyro_sample_z = (int16_t)((uint16_t)(buf[4]) |
+				((uint16_t)(buf[5]) << 8));
 
 	return 0;
 }
 
 #if defined(CONFIG_LSM6DSL_ENABLE_TEMP)
-static int lsm6dsl_sample_fetch_temp(struct device *dev)
+static int lsm6dsl_sample_fetch_temp(const struct device *dev)
 {
-	struct lsm6dsl_data *data = dev->driver_data;
-	u8_t buf[2];
+	struct lsm6dsl_data *data = dev->data;
+	uint8_t buf[2];
 
 	if (data->hw_tf->read_data(data, LSM6DSL_REG_OUT_TEMP_L,
 				   buf, sizeof(buf)) < 0) {
@@ -368,56 +371,57 @@ static int lsm6dsl_sample_fetch_temp(struct device *dev)
 		return -EIO;
 	}
 
-	data->temp_sample = (s16_t)((u16_t)(buf[0]) |
-				((u16_t)(buf[1]) << 8));
+	data->temp_sample = (int16_t)((uint16_t)(buf[0]) |
+				((uint16_t)(buf[1]) << 8));
 
 	return 0;
 }
 #endif
 
 #if defined(CONFIG_LSM6DSL_EXT0_LIS2MDL)
-static int lsm6dsl_sample_fetch_magn(struct device *dev)
+static int lsm6dsl_sample_fetch_magn(const struct device *dev)
 {
-	struct lsm6dsl_data *data = dev->driver_data;
-	u8_t buf[6];
+	struct lsm6dsl_data *data = dev->data;
+	uint8_t buf[6];
 
 	if (lsm6dsl_shub_read_external_chip(dev, buf, sizeof(buf)) < 0) {
 		LOG_DBG("failed to read ext mag sample");
 		return -EIO;
 	}
 
-	data->magn_sample_x = (s16_t)((u16_t)(buf[0]) |
-				((u16_t)(buf[1]) << 8));
-	data->magn_sample_y = (s16_t)((u16_t)(buf[2]) |
-				((u16_t)(buf[3]) << 8));
-	data->magn_sample_z = (s16_t)((u16_t)(buf[4]) |
-				((u16_t)(buf[5]) << 8));
+	data->magn_sample_x = (int16_t)((uint16_t)(buf[0]) |
+				((uint16_t)(buf[1]) << 8));
+	data->magn_sample_y = (int16_t)((uint16_t)(buf[2]) |
+				((uint16_t)(buf[3]) << 8));
+	data->magn_sample_z = (int16_t)((uint16_t)(buf[4]) |
+				((uint16_t)(buf[5]) << 8));
 
 	return 0;
 }
 #endif
 #if defined(CONFIG_LSM6DSL_EXT0_LPS22HB)
-static int lsm6dsl_sample_fetch_press(struct device *dev)
+static int lsm6dsl_sample_fetch_press(const struct device *dev)
 {
-	struct lsm6dsl_data *data = dev->driver_data;
-	u8_t buf[5];
+	struct lsm6dsl_data *data = dev->data;
+	uint8_t buf[5];
 
 	if (lsm6dsl_shub_read_external_chip(dev, buf, sizeof(buf)) < 0) {
 		LOG_DBG("failed to read ext press sample");
 		return -EIO;
 	}
 
-	data->sample_press = (s32_t)((u32_t)(buf[0]) |
-				     ((u32_t)(buf[1]) << 8) |
-				     ((u32_t)(buf[2]) << 16));
-	data->sample_temp = (s16_t)((u16_t)(buf[3]) |
-				     ((u16_t)(buf[4]) << 8));
+	data->sample_press = (int32_t)((uint32_t)(buf[0]) |
+				     ((uint32_t)(buf[1]) << 8) |
+				     ((uint32_t)(buf[2]) << 16));
+	data->sample_temp = (int16_t)((uint16_t)(buf[3]) |
+				     ((uint16_t)(buf[4]) << 8));
 
 	return 0;
 }
 #endif
 
-static int lsm6dsl_sample_fetch(struct device *dev, enum sensor_channel chan)
+static int lsm6dsl_sample_fetch(const struct device *dev,
+				enum sensor_channel chan)
 {
 	switch (chan) {
 	case SENSOR_CHAN_ACCEL_XYZ:
@@ -470,8 +474,8 @@ static inline void lsm6dsl_accel_convert(struct sensor_value *val, int raw_val,
 	/* Sensitivity is exposed in mg/LSB */
 	/* Convert to m/s^2 */
 	dval = (double)(raw_val) * sensitivity * SENSOR_G_DOUBLE / 1000;
-	val->val1 = (s32_t)dval;
-	val->val2 = (((s32_t)(dval * 1000)) % 1000) * 1000;
+	val->val1 = (int32_t)dval;
+	val->val2 = (((int32_t)(dval * 1000)) % 1000) * 1000;
 
 }
 
@@ -520,8 +524,8 @@ static inline void lsm6dsl_gyro_convert(struct sensor_value *val, int raw_val,
 	/* Sensitivity is exposed in mdps/LSB */
 	/* Convert to rad/s */
 	dval = (double)(raw_val * sensitivity * SENSOR_DEG2RAD_DOUBLE / 1000);
-	val->val1 = (s32_t)dval;
-	val->val2 = (((s32_t)(dval * 1000)) % 1000) * 1000;
+	val->val1 = (int32_t)dval;
+	val->val2 = (((int32_t)(dval * 1000)) % 1000) * 1000;
 }
 
 static inline int lsm6dsl_gyro_get_channel(enum sensor_channel chan,
@@ -577,8 +581,8 @@ static inline void lsm6dsl_magn_convert(struct sensor_value *val, int raw_val,
 
 	/* Sensitivity is exposed in mgauss/LSB */
 	dval = (double)(raw_val * sensitivity);
-	val->val1 = (s32_t)dval / 1000000;
-	val->val2 = (s32_t)dval % 1000000;
+	val->val1 = (int32_t)dval / 1000000;
+	val->val2 = (int32_t)dval % 1000000;
 }
 
 static inline int lsm6dsl_magn_get_channel(enum sensor_channel chan,
@@ -629,29 +633,29 @@ static int lsm6dsl_magn_channel_get(enum sensor_channel chan,
 
 #if defined(CONFIG_LSM6DSL_EXT0_LPS22HB)
 static inline void lps22hb_press_convert(struct sensor_value *val,
-					 s32_t raw_val)
+					 int32_t raw_val)
 {
 	/* Pressure sensitivity is 4096 LSB/hPa */
 	/* Convert raw_val to val in kPa */
 	val->val1 = (raw_val >> 12) / 10;
 	val->val2 = (raw_val >> 12) % 10 * 100000 +
-		(((s32_t)((raw_val) & 0x0FFF) * 100000L) >> 12);
+		(((int32_t)((raw_val) & 0x0FFF) * 100000L) >> 12);
 }
 
 static inline void lps22hb_temp_convert(struct sensor_value *val,
-					s16_t raw_val)
+					int16_t raw_val)
 {
 	/* Temperature sensitivity is 100 LSB/deg C */
 	val->val1 = raw_val / 100;
-	val->val2 = (s32_t)raw_val % 100 * (10000);
+	val->val2 = (int32_t)raw_val % 100 * (10000);
 }
 #endif
 
-static int lsm6dsl_channel_get(struct device *dev,
+static int lsm6dsl_channel_get(const struct device *dev,
 			       enum sensor_channel chan,
 			       struct sensor_value *val)
 {
-	struct lsm6dsl_data *data = dev->driver_data;
+	struct lsm6dsl_data *data = dev->data;
 
 	switch (chan) {
 	case SENSOR_CHAN_ACCEL_X:
@@ -704,10 +708,10 @@ static const struct sensor_driver_api lsm6dsl_api_funcs = {
 	.channel_get = lsm6dsl_channel_get,
 };
 
-static int lsm6dsl_init_chip(struct device *dev)
+static int lsm6dsl_init_chip(const struct device *dev)
 {
-	struct lsm6dsl_data *data = dev->driver_data;
-	u8_t chip_id;
+	struct lsm6dsl_data *data = dev->data;
+	uint8_t chip_id;
 
 	if (lsm6dsl_reboot(dev) < 0) {
 		LOG_DBG("failed to reboot device");
@@ -777,10 +781,10 @@ static struct lsm6dsl_config lsm6dsl_config = {
 	.comm_master_dev_name = DT_INST_BUS_LABEL(0),
 };
 
-static int lsm6dsl_init(struct device *dev)
+static int lsm6dsl_init(const struct device *dev)
 {
-	const struct lsm6dsl_config * const config = dev->config->config_info;
-	struct lsm6dsl_data *data = dev->driver_data;
+	const struct lsm6dsl_config * const config = dev->config;
+	struct lsm6dsl_data *data = dev->data;
 
 	data->comm_master = device_get_binding(config->comm_master_dev_name);
 	if (!data->comm_master) {
@@ -789,7 +793,7 @@ static int lsm6dsl_init(struct device *dev)
 		return -EINVAL;
 	}
 
-#if DT_ANY_INST_ON_BUS(spi)
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
 	lsm6dsl_spi_init(dev);
 #else
 	lsm6dsl_i2c_init(dev);

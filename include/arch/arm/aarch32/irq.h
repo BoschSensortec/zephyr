@@ -43,7 +43,7 @@ extern int arch_irq_is_enabled(unsigned int irq);
 
 /* internal routine documented in C file, needed by IRQ_CONNECT() macro */
 extern void z_arm_irq_priority_set(unsigned int irq, unsigned int prio,
-				   u32_t flags);
+				   uint32_t flags);
 
 #else
 
@@ -106,18 +106,16 @@ extern void z_arm_interrupt_init(void);
  * runtime.
  */
 #define ARCH_IRQ_CONNECT(irq_p, priority_p, isr_p, isr_param_p, flags_p) \
-({ \
+{ \
 	Z_ISR_DECLARE(irq_p, 0, isr_p, isr_param_p); \
 	z_arm_irq_priority_set(irq_p, priority_p, flags_p); \
-	irq_p; \
-})
+}
 
 #define ARCH_IRQ_DIRECT_CONNECT(irq_p, priority_p, isr_p, flags_p) \
-({ \
+{ \
 	Z_ISR_DECLARE(irq_p, ISR_FLAG_DIRECT, isr_p, NULL); \
 	z_arm_irq_priority_set(irq_p, priority_p, flags_p); \
-	irq_p; \
-})
+}
 
 #ifdef CONFIG_SYS_POWER_MANAGEMENT
 extern void _arch_isr_direct_pm(void);
@@ -223,7 +221,7 @@ extern void z_arm_irq_direct_dynamic_dispatch_no_reschedule(void);
 #endif /* CONFIG_DYNAMIC_DIRECT_INTERRUPTS */
 
 /* Spurious interrupt handler. Throws an error if called */
-extern void z_irq_spurious(void *unused);
+extern void z_irq_spurious(const void *unused);
 
 #ifdef CONFIG_GEN_SW_ISR_TABLE
 /* Architecture-specific common entry point for interrupts from the vector
@@ -232,6 +230,17 @@ extern void z_irq_spurious(void *unused);
  */
 extern void _isr_wrapper(void);
 #endif
+
+#if defined(CONFIG_ARM_SECURE_FIRMWARE)
+/* Architecture-specific definition for the target security
+ * state of an NVIC IRQ line.
+ */
+typedef enum {
+	IRQ_TARGET_STATE_SECURE = 0,
+	IRQ_TARGET_STATE_NON_SECURE
+} irq_target_state_t;
+
+#endif /* CONFIG_ARM_SECURE_FIRMWARE */
 
 #endif /* _ASMLANGUAGE */
 

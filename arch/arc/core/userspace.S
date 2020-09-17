@@ -98,8 +98,10 @@ SECTION_FUNC(TEXT, z_arc_userspace_enter)
 
 	/* the end of user stack in r5 */
 	add r5, r4, r5
-	/* start of privilege stack */
-	add blink, r5, CONFIG_PRIVILEGED_STACK_SIZE + STACK_GUARD_SIZE
+	/* get start of privilege stack, r6 points to current thread */
+	ld blink, [r6, _thread_offset_to_priv_stack_start]
+	add blink, blink, CONFIG_PRIVILEGED_STACK_SIZE
+
 	mov_s sp, r5
 
 	push_s r0
@@ -172,14 +174,10 @@ _arc_go_to_user_space:
 
 	clear_scratch_regs
 
-	mov_s fp, 0
-	mov_s r29, 0
-	mov_s r30, 0
-	mov_s blink, 0
-
-#ifdef CONFIG_EXECUTION_BENCHMARKING
-	bl read_timer_end_of_userspace_enter
-#endif
+	mov fp, 0
+	mov r29, 0
+	mov r30, 0
+	mov blink, 0
 
 	rtie
 
@@ -216,8 +214,8 @@ SECTION_FUNC(TEXT, _arc_do_syscall)
 	/* save return value */
 	st_s r0, [sp, ___isf_t_r0_OFFSET]
 
-	mov_s r29, 0
-	mov_s r30, 0
+	mov r29, 0
+	mov r30, 0
 
 	/* through fake exception return, go back to the caller */
 	lr r0, [_ARC_V2_STATUS32]

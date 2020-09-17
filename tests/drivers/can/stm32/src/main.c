@@ -109,7 +109,8 @@ static inline void check_msg(struct zcan_frame *msg1, struct zcan_frame *msg2)
 	zassert_equal(cmp_res, 0, "Received data differ");
 }
 
-static void send_test_msg(struct device *can_dev, struct zcan_frame *msg)
+static void send_test_msg(const struct device *can_dev,
+			  struct zcan_frame *msg)
 {
 	int ret;
 
@@ -126,11 +127,11 @@ static void send_test_msg(struct device *can_dev, struct zcan_frame *msg)
  */
 static void test_filter_handling(void)
 {
-	struct device *can_dev;
+	const struct device *can_dev;
 	int ret, filter_id_1, filter_id_2;
 	struct zcan_frame msg_buffer;
 
-	can_dev = device_get_binding(DT_ALIAS_CAN_PRIMARY_LABEL);
+	can_dev = device_get_binding(DT_CHOSEN_ZEPHYR_CAN_PRIMARY_LABEL);
 
 	ret = can_configure(can_dev, CAN_LOOPBACK_MODE, 0);
 

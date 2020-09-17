@@ -30,12 +30,6 @@ extern "C" {
  * @}
  */
 
-#ifdef CONFIG_KERNEL_DEBUG
-#define K_DEBUG(fmt, ...) printk("[%s]  " fmt, __func__, ##__VA_ARGS__)
-#else
-#define K_DEBUG(fmt, ...)
-#endif
-
 #if defined(CONFIG_COOP_ENABLED) && defined(CONFIG_PREEMPT_ENABLED)
 #define _NUM_COOP_PRIO (CONFIG_NUM_COOP_PRIORITIES)
 #define _NUM_PREEMPT_PRIO (CONFIG_NUM_PREEMPT_PRIORITIES + 1)
@@ -78,7 +72,7 @@ extern "C" {
 
 #ifdef CONFIG_OBJECT_TRACING
 #define _OBJECT_TRACING_NEXT_PTR(type) struct type *__next;
-#define _OBJECT_TRACING_LINKED_FLAG u8_t __linked;
+#define _OBJECT_TRACING_LINKED_FLAG uint8_t __linked;
 #define _OBJECT_TRACING_INIT \
 	.__next = NULL,	     \
 	.__linked = 0,
@@ -153,7 +147,7 @@ struct z_stack_data {
 	size_t size;
 
 	/* Stack buffer for privilege mode elevations */
-	u8_t *priv;
+	uint8_t *priv;
 };
 #endif /* CONFIG_GEN_PRIV_STACKS */
 
@@ -184,9 +178,9 @@ union z_object_data {
  * z_object_find() */
 struct z_object {
 	void *name;
-	u8_t perms[CONFIG_MAX_THREAD_BYTES];
-	u8_t type;
-	u8_t flags;
+	uint8_t perms[CONFIG_MAX_THREAD_BYTES];
+	uint8_t type;
+	uint8_t flags;
 	union z_object_data data;
 } __packed __aligned(4);
 
@@ -233,7 +227,7 @@ struct z_object_assignment {
  *
  * @param obj Address of the kernel object
  */
-void z_object_init(void *obj);
+void z_object_init(const void *obj);
 #else
 /* LCOV_EXCL_START */
 #define K_THREAD_ACCESS_GRANT(thread, ...)
@@ -241,7 +235,7 @@ void z_object_init(void *obj);
 /**
  * @internal
  */
-static inline void z_object_init(void *obj)
+static inline void z_object_init(const void *obj)
 {
 	ARG_UNUSED(obj);
 }
@@ -249,8 +243,8 @@ static inline void z_object_init(void *obj)
 /**
  * @internal
  */
-static inline void z_impl_k_object_access_grant(void *object,
-					       struct k_thread *thread)
+static inline void z_impl_k_object_access_grant(const void *object,
+						struct k_thread *thread)
 {
 	ARG_UNUSED(object);
 	ARG_UNUSED(thread);
@@ -259,7 +253,7 @@ static inline void z_impl_k_object_access_grant(void *object,
 /**
  * @internal
  */
-static inline void k_object_access_revoke(void *object,
+static inline void k_object_access_revoke(const void *object,
 					  struct k_thread *thread)
 {
 	ARG_UNUSED(object);
@@ -269,12 +263,12 @@ static inline void k_object_access_revoke(void *object,
 /**
  * @internal
  */
-static inline void z_impl_k_object_release(void *object)
+static inline void z_impl_k_object_release(const void *object)
 {
 	ARG_UNUSED(object);
 }
 
-static inline void k_object_access_all_grant(void *object)
+static inline void k_object_access_all_grant(const void *object)
 {
 	ARG_UNUSED(object);
 }
@@ -291,7 +285,8 @@ static inline void k_object_access_all_grant(void *object)
  * @param object Address of kernel object
  * @param thread Thread to grant access to the object
  */
-__syscall void k_object_access_grant(void *object, struct k_thread *thread);
+__syscall void k_object_access_grant(const void *object,
+				     struct k_thread *thread);
 
 /**
  * Revoke a thread's access to a kernel object
@@ -303,7 +298,7 @@ __syscall void k_object_access_grant(void *object, struct k_thread *thread);
  * @param object Address of kernel object
  * @param thread Thread to remove access to the object
  */
-void k_object_access_revoke(void *object, struct k_thread *thread);
+void k_object_access_revoke(const void *object, struct k_thread *thread);
 
 /**
  * @brief Release an object
@@ -314,7 +309,7 @@ void k_object_access_revoke(void *object, struct k_thread *thread);
  * @param object The object to be released
  *
  */
-__syscall void k_object_release(void *object);
+__syscall void k_object_release(const void *object);
 
 /**
  * Grant all present and future threads access to an object
@@ -333,7 +328,7 @@ __syscall void k_object_release(void *object);
  *
  * @param object Address of kernel object
  */
-void k_object_access_all_grant(void *object);
+void k_object_access_all_grant(const void *object);
 
 /**
  * Allocate a kernel object of a designated type
@@ -353,6 +348,27 @@ __syscall void *k_object_alloc(enum k_objects otype);
 
 #ifdef CONFIG_DYNAMIC_OBJECTS
 /**
+ * Allocate memory and install as a generic kernel object
+ *
+ * This is a low-level function to allocate some memory, and register that
+ * allocated memory in the kernel object lookup tables with type K_OBJ_ANY.
+ * Initialization state and thread permissions will be cleared. The
+ * returned z_object's data value will be uninitialized.
+ *
+ * Most users will want to use k_object_alloc() instead.
+ *
+ * Memory allocated will be drawn from the calling thread's reasource pool
+ * and may be freed later by passing the actual object pointer (found
+ * in the returned z_object's 'name' member) to k_object_free().
+ *
+ * @param size Size of the allocated object
+ * @return NULL on insufficient memory
+ * @return A pointer to the associated z_object that is installed in the
+ *	kernel object tables
+ */
+struct z_object *z_dynamic_object_create(size_t size);
+
+/**
  * Free a kernel object previously allocated with k_object_alloc()
  *
  * This will return memory for a kernel object back to resource pool it was
@@ -370,12 +386,20 @@ static inline void *z_impl_k_object_alloc(enum k_objects otype)
 
 	return NULL;
 }
+
+static inline struct z_object *z_dynamic_object_create(size_t size)
+{
+	ARG_UNUSED(size);
+
+	return NULL;
+}
+
 /**
  * @brief Free an object
  *
  * @param obj
  */
-static inline void k_obj_free(void *obj)
+static inline void k_object_free(void *obj)
 {
 	ARG_UNUSED(obj);
 }
@@ -384,31 +408,6 @@ static inline void k_obj_free(void *obj)
 
 /** @} */
 
-/* Using typedef deliberately here, this is quite intended to be an opaque
- * type.
- *
- * The purpose of this data type is to clearly distinguish between the
- * declared symbol for a stack (of type k_thread_stack_t) and the underlying
- * buffer which composes the stack data actually used by the underlying
- * thread; they cannot be used interchangeably as some arches precede the
- * stack buffer region with guard areas that trigger a MPU or MMU fault
- * if written to.
- *
- * APIs that want to work with the buffer inside should continue to use
- * char *.
- *
- * Stacks should always be created with K_THREAD_STACK_DEFINE().
- */
-struct __packed z_thread_stack_element {
-	char data;
-};
-
-/**
- * @typedef k_thread_stack_t
- * @brief Typedef of struct z_thread_stack_element
- *
- * @see z_thread_stack_element
- */
 
 /**
  * @typedef k_thread_entry_t
@@ -453,10 +452,10 @@ struct _thread_base {
 	_wait_q_t *pended_on;
 
 	/* user facing 'thread options'; values defined in include/kernel.h */
-	u8_t user_options;
+	uint8_t user_options;
 
 	/* thread state */
-	u8_t thread_state;
+	uint8_t thread_state;
 
 	/*
 	 * scheduler lock count and thread priority
@@ -475,37 +474,37 @@ struct _thread_base {
 	union {
 		struct {
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-			u8_t sched_locked;
-			s8_t prio;
+			uint8_t sched_locked;
+			int8_t prio;
 #else /* LITTLE and PDP */
-			s8_t prio;
-			u8_t sched_locked;
+			int8_t prio;
+			uint8_t sched_locked;
 #endif
 		};
-		u16_t preempt;
+		uint16_t preempt;
 	};
 
 #ifdef CONFIG_SCHED_DEADLINE
 	int prio_deadline;
 #endif
 
-	u32_t order_key;
+	uint32_t order_key;
 
 #ifdef CONFIG_SMP
 	/* True for the per-CPU idle threads */
-	u8_t is_idle;
+	uint8_t is_idle;
 
 	/* CPU index on which thread was last run */
-	u8_t cpu;
+	uint8_t cpu;
 
 	/* Recursive count of irq_lock() calls */
-	u8_t global_lock_count;
+	uint8_t global_lock_count;
 
 #endif
 
 #ifdef CONFIG_SCHED_CPU_MASK
 	/* "May run on" bits for each CPU */
-	u8_t cpu_mask;
+	uint8_t cpu_mask;
 #endif
 
 	/* data returned by APIs */
@@ -529,11 +528,20 @@ struct _thread_stack_info {
 	 */
 	uintptr_t start;
 
-	/* Stack Size - Thread writable stack buffer size. Represents
-	 * the size of the actual area, starting from the start member,
-	 * that should be writable by the thread
+	/* Thread writable stack buffer size. Represents the size of the actual
+	 * buffer, starting from the 'start' member, that should be writable by
+	 * the thread. This comprises of the thread stack area, any area reserved
+	 * for local thread data storage, as well as any area left-out due to
+	 * random adjustments applied to the initial thread stack pointer during
+	 * thread initialization.
 	 */
 	size_t size;
+
+	/* Adjustment value to the size member, removing any storage
+	 * used for TLS or random stack base offsets. (start + size - delta)
+	 * is the initial stack pointer for a thread. May be 0.
+	 */
+	size_t delta;
 };
 
 typedef struct _thread_stack_info _thread_stack_info_t;
@@ -662,7 +670,7 @@ typedef void (*k_thread_user_cb_t)(const struct k_thread *thread,
  * @param user_cb Pointer to the user callback function.
  * @param user_data Pointer to user data.
  *
- * @note CONFIG_THREAD_MONITOR must be set for this function
+ * @note @option{CONFIG_THREAD_MONITOR} must be set for this function
  * to be effective.
  * @note This API uses @ref k_spin_lock to protect the _kernel.threads
  * list which means creation of new threads and terminations of existing
@@ -681,7 +689,7 @@ extern void k_thread_foreach(k_thread_user_cb_t user_cb, void *user_data);
  * @param user_cb Pointer to the user callback function.
  * @param user_data Pointer to user data.
  *
- * @note CONFIG_THREAD_MONITOR must be set for this function
+ * @note @option{CONFIG_THREAD_MONITOR} must be set for this function
  * to be effective.
  * @note This API uses @ref k_spin_lock only when accessing the _kernel.threads
  * queue elements. It unlocks it during user callback function processing.
@@ -723,7 +731,7 @@ extern void k_thread_foreach_unlocked(
  * */
 #define K_ESSENTIAL (BIT(0))
 
-#if defined(CONFIG_FP_SHARING)
+#if defined(CONFIG_FPU_SHARING)
 /**
  * @brief thread uses floating point registers
  */
@@ -743,15 +751,15 @@ extern void k_thread_foreach_unlocked(
  *
  * @details
  * Indicates that the thread being created should inherit all kernel object
- * permissions from the thread that created it. No effect if CONFIG_USERSPACE
- * is not enabled.
+ * permissions from the thread that created it. No effect if
+ * @option{CONFIG_USERSPACE} is not enabled.
  */
 #define K_INHERIT_PERMS (BIT(3))
 
 #ifdef CONFIG_X86
 /* x86 Bitmask definitions for threads user options */
 
-#if defined(CONFIG_FP_SHARING) && defined(CONFIG_SSE)
+#if defined(CONFIG_FPU_SHARING) && defined(CONFIG_SSE)
 /* thread uses SSEx (and also FP) registers */
 #define K_SSE_REGS (BIT(7))
 #endif
@@ -774,10 +782,25 @@ extern void k_thread_foreach_unlocked(
  * K_FP_REGS, and K_SSE_REGS. Multiple options may be specified by separating
  * them using "|" (the logical OR operator).
  *
- * Historically, users often would use the beginning of the stack memory region
- * to store the struct k_thread data, although corruption will occur if the
- * stack overflows this region and stack protection features may not detect this
- * situation.
+ * Stack objects passed to this function must be originally defined with
+ * either of these macros in order to be portable:
+ *
+ * - K_THREAD_STACK_DEFINE() - For stacks that may support either user or
+ *   supervisor threads.
+ * - K_KERNEL_STACK_DEFINE() - For stacks that may support supervisor
+ *   threads only. These stacks use less memory if CONFIG_USERSPACE is
+ *   enabled.
+ *
+ * The stack_size parameter has constraints. It must either be:
+ *
+ * - The original size value passed to K_THREAD_STACK_DEFINE() or
+ *   K_KERNEL_STACK_DEFINE()
+ * - The return value of K_THREAD_STACK_SIZEOF(stack) if the stack was
+ *   defined with K_THREAD_STACK_DEFINE()
+ * - The return value of K_KERNEL_STACK_SIZEOF(stack) if the stack was
+ *   defined with K_KERNEL_STACK_DEFINE().
+ *
+ * Using other values, or sizeof(stack) may produce undefined behavior.
  *
  * @param new_thread Pointer to uninitialized struct k_thread
  * @param stack Pointer to the stack space.
@@ -798,7 +821,7 @@ __syscall k_tid_t k_thread_create(struct k_thread *new_thread,
 				  size_t stack_size,
 				  k_thread_entry_t entry,
 				  void *p1, void *p2, void *p3,
-				  int prio, u32_t options, k_timeout_t delay);
+				  int prio, uint32_t options, k_timeout_t delay);
 
 /**
  * @brief Drop a thread's privileges permanently to user mode
@@ -826,7 +849,7 @@ extern FUNC_NORETURN void k_thread_user_mode_enter(k_thread_entry_t entry,
  * @param ... list of kernel object pointers
  */
 #define k_thread_access_grant(thread, ...) \
-	FOR_EACH_FIXED_ARG(k_object_access_grant, thread, __VA_ARGS__)
+	FOR_EACH_FIXED_ARG(k_object_access_grant, (;), thread, __VA_ARGS__)
 
 /**
  * @brief Assign a resource memory pool to a thread
@@ -838,9 +861,9 @@ extern FUNC_NORETURN void k_thread_user_mode_enter(k_thread_entry_t entry,
  * Changing a thread's resource pool will not migrate allocations from the
  * previous pool.
  *
- * @param thread Target thread to assign a memory pool for resource requests,
- *               or NULL if the thread should no longer have a memory pool.
- * @param pool Memory pool to use for resources.
+ * @param thread Target thread to assign a memory pool for resource requests.
+ * @param pool Memory pool to use for resources,
+ *             or NULL if the thread should no longer have a memory pool.
  */
 static inline void k_thread_resource_pool_assign(struct k_thread *thread,
 						 struct k_mem_pool *pool)
@@ -856,8 +879,8 @@ static inline void k_thread_resource_pool_assign(struct k_thread *thread,
  *
  * Some hardware may prevent inspection of a stack buffer currently in use.
  * If this API is called from supervisor mode, on the currently running thread,
- * on a platform which selects CONFIG_NO_UNUSED_STACK_INSPECTION, an error
- * will be generated.
+ * on a platform which selects @option{CONFIG_NO_UNUSED_STACK_INSPECTION}, an
+ * error will be generated.
  *
  * @param thread Thread to inspect stack information
  * @param unused_ptr Output parameter, filled in with the unused stack space
@@ -919,7 +942,7 @@ __syscall int k_thread_join(struct k_thread *thread, k_timeout_t timeout);
  * @return Zero if the requested time has elapsed or the number of milliseconds
  * left to sleep, if thread was woken up by \ref k_wakeup call.
  */
-__syscall s32_t k_sleep(k_timeout_t timeout);
+__syscall int32_t k_sleep(k_timeout_t timeout);
 
 /**
  * @brief Put the current thread to sleep.
@@ -931,7 +954,7 @@ __syscall s32_t k_sleep(k_timeout_t timeout);
  * @return Zero if the requested time has elapsed or the number of milliseconds
  * left to sleep, if thread was woken up by \ref k_wakeup call.
  */
-static inline s32_t k_msleep(s32_t ms)
+static inline int32_t k_msleep(int32_t ms)
 {
 	return k_sleep(Z_TIMEOUT_MS(ms));
 }
@@ -941,16 +964,17 @@ static inline s32_t k_msleep(s32_t ms)
  *
  * This function is unlikely to work as expected without kernel tuning.
  * In particular, because the lower bound on the duration of a sleep is
- * the duration of a tick, CONFIG_SYS_CLOCK_TICKS_PER_SEC must be adjusted
- * to achieve the resolution desired. The implications of doing this must
- * be understood before attempting to use k_usleep(). Use with caution.
+ * the duration of a tick, @option{CONFIG_SYS_CLOCK_TICKS_PER_SEC} must be
+ * adjusted to achieve the resolution desired. The implications of doing
+ * this must be understood before attempting to use k_usleep(). Use with
+ * caution.
  *
  * @param us Number of microseconds to sleep.
  *
  * @return Zero if the requested time has elapsed or the number of microseconds
  * left to sleep, if thread was woken up by \ref k_wakeup call.
  */
-__syscall s32_t k_usleep(s32_t us);
+__syscall int32_t k_usleep(int32_t us);
 
 /**
  * @brief Cause the current thread to busy wait.
@@ -958,9 +982,15 @@ __syscall s32_t k_usleep(s32_t us);
  * This routine causes the current thread to execute a "do nothing" loop for
  * @a usec_to_wait microseconds.
  *
+ * @note The clock used for the microsecond-resolution delay here may
+ * be skewed relative to the clock used for system timeouts like
+ * k_sleep().  For example k_busy_wait(1000) may take slightly more or
+ * less time than k_sleep(K_MSEC(1)), with the offset dependent on
+ * clock tolerances.
+ *
  * @return N/A
  */
-__syscall void k_busy_wait(u32_t usec_to_wait);
+__syscall void k_busy_wait(uint32_t usec_to_wait);
 
 /**
  * @brief Yield the current thread.
@@ -1075,13 +1105,13 @@ struct _static_thread_data {
 	void *init_p2;
 	void *init_p3;
 	int init_prio;
-	u32_t init_options;
-	s32_t init_delay;
+	uint32_t init_options;
+	int32_t init_delay;
 	void (*init_abort)(void);
 	const char *init_name;
 };
 
-#define _THREAD_INITIALIZER(thread, stack, stack_size,           \
+#define Z_THREAD_INITIALIZER(thread, stack, stack_size,           \
 			    entry, p1, p2, p3,                   \
 			    prio, options, delay, abort, tname)  \
 	{                                                        \
@@ -1124,7 +1154,7 @@ struct _static_thread_data {
  * @param p3 3rd entry point parameter.
  * @param prio Thread priority.
  * @param options Thread options.
- * @param delay Scheduling delay (in milliseconds), or K_NO_WAIT (for no delay).
+ * @param delay Scheduling delay (in milliseconds), zero for no delay.
  *
  *
  * @internal It has been observed that the x86 compiler by default aligns
@@ -1138,7 +1168,7 @@ struct _static_thread_data {
 	K_THREAD_STACK_DEFINE(_k_thread_stack_##name, stack_size);	 \
 	struct k_thread _k_thread_obj_##name;				 \
 	Z_STRUCT_SECTION_ITERABLE(_static_thread_data, _k_thread_data_##name) =\
-		_THREAD_INITIALIZER(&_k_thread_obj_##name,		 \
+		Z_THREAD_INITIALIZER(&_k_thread_obj_##name,		 \
 				    _k_thread_stack_##name, stack_size,  \
 				entry, p1, p2, p3, prio, options, delay, \
 				NULL, name);				 	 \
@@ -1210,11 +1240,8 @@ __syscall void k_thread_priority_set(k_tid_t thread, int prio);
  * above this call, which is simply input to the priority selection
  * logic.
  *
- * @note
- *    @rst
- *    You should enable :option:`CONFIG_SCHED_DEADLINE` in your project
- *    configuration.
- *    @endrst
+ * @note You should enable @option{CONFIG_SCHED_DEADLINE} in your project
+ * configuration.
  *
  * @param thread A thread on which to set the deadline
  * @param deadline A time delta, in cycle units
@@ -1230,11 +1257,8 @@ __syscall void k_thread_deadline_set(k_tid_t thread, int deadline);
  * After this returns, the thread will no longer be schedulable on any
  * CPUs.  The thread must not be currently runnable.
  *
- * @note
- *    @rst
- *    You should enable :option:`CONFIG_SCHED_DEADLINE` in your project
- *    configuration.
- *    @endrst
+ * @note You should enable @option{CONFIG_SCHED_DEADLINE} in your project
+ * configuration.
  *
  * @param thread Thread to operate upon
  * @return Zero on success, otherwise error code
@@ -1247,11 +1271,8 @@ int k_thread_cpu_mask_clear(k_tid_t thread);
  * After this returns, the thread will be schedulable on any CPU.  The
  * thread must not be currently runnable.
  *
- * @note
- *    @rst
- *    You should enable :option:`CONFIG_SCHED_DEADLINE` in your project
- *    configuration.
- *    @endrst
+ * @note You should enable @option{CONFIG_SCHED_DEADLINE} in your project
+ * configuration.
  *
  * @param thread Thread to operate upon
  * @return Zero on success, otherwise error code
@@ -1263,11 +1284,8 @@ int k_thread_cpu_mask_enable_all(k_tid_t thread);
  *
  * The thread must not be currently runnable.
  *
- * @note
- *    @rst
- *    You should enable :option:`CONFIG_SCHED_DEADLINE` in your project
- *    configuration.
- *    @endrst
+ * @note You should enable @option{CONFIG_SCHED_DEADLINE} in your project
+ * configuration.
  *
  * @param thread Thread to operate upon
  * @param cpu CPU index
@@ -1280,11 +1298,8 @@ int k_thread_cpu_mask_enable(k_tid_t thread, int cpu);
  *
  * The thread must not be currently runnable.
  *
- * @note
- *    @rst
- *    You should enable :option:`CONFIG_SCHED_DEADLINE` in your project
- *    configuration.
- *    @endrst
+ * @note You should enable @option{CONFIG_SCHED_DEADLINE} in your project
+ * configuration.
  *
  * @param thread Thread to operate upon
  * @param cpu CPU index
@@ -1354,7 +1369,7 @@ __syscall void k_thread_resume(k_tid_t thread);
  *
  * @return N/A
  */
-extern void k_sched_time_slice_set(s32_t slice, int prio);
+extern void k_sched_time_slice_set(int32_t slice, int prio);
 
 /** @} */
 
@@ -1480,8 +1495,8 @@ __syscall void *k_thread_custom_data_get(void);
 /**
  * @brief Set current thread name
  *
- * Set the name of the thread to be used when THREAD_MONITOR is enabled for
- * tracing and debugging.
+ * Set the name of the thread to be used when @option{CONFIG_THREAD_MONITOR}
+ * is enabled for tracing and debugging.
  *
  * @param thread_id Thread to set name, or NULL to set the current thread
  * @param value Name string
@@ -1756,7 +1771,7 @@ struct k_timer {
 	k_timeout_t period;
 
 	/* timer status */
-	u32_t status;
+	uint32_t status;
 
 	/* user-specific data, also used to support legacy features */
 	void *user_data;
@@ -1769,8 +1784,8 @@ struct k_timer {
 	{ \
 	.timeout = { \
 		.node = {},\
+		.fn = z_timer_expiration_handler, \
 		.dticks = 0, \
-		.fn = z_timer_expiration_handler \
 	}, \
 	.wait_q = Z_WAIT_Q_INIT(&obj.wait_q), \
 	.expiry_fn = expiry, \
@@ -1900,7 +1915,7 @@ __syscall void k_timer_stop(struct k_timer *timer);
  *
  * @return Timer status.
  */
-__syscall u32_t k_timer_status_get(struct k_timer *timer);
+__syscall uint32_t k_timer_status_get(struct k_timer *timer);
 
 /**
  * @brief Synchronize thread to timer expiration.
@@ -1919,7 +1934,7 @@ __syscall u32_t k_timer_status_get(struct k_timer *timer);
  *
  * @return Timer status.
  */
-__syscall u32_t k_timer_status_sync(struct k_timer *timer);
+__syscall uint32_t k_timer_status_sync(struct k_timer *timer);
 
 #ifdef CONFIG_SYS_CLOCK_EXISTS
 
@@ -1964,7 +1979,7 @@ static inline k_ticks_t z_impl_k_timer_remaining_ticks(struct k_timer *timer)
  *
  * @return Remaining time (in milliseconds).
  */
-static inline u32_t k_timer_remaining_get(struct k_timer *timer)
+static inline uint32_t k_timer_remaining_get(struct k_timer *timer)
 {
 	return k_ticks_to_ms_floor32(k_timer_remaining_ticks(timer));
 }
@@ -2021,12 +2036,12 @@ static inline void *z_impl_k_timer_user_data_get(struct k_timer *timer)
  * @brief Get system uptime, in system ticks.
  *
  * This routine returns the elapsed time since the system booted, in
- * ticks (c.f. :option:`CONFIG_SYS_CLOCK_TICKS_PER_SEC`), which is the
+ * ticks (c.f. @option{CONFIG_SYS_CLOCK_TICKS_PER_SEC}), which is the
  * fundamental unit of resolution of kernel timekeeping.
  *
  * @return Current uptime in ticks.
  */
-__syscall s64_t k_uptime_ticks(void);
+__syscall int64_t k_uptime_ticks(void);
 
 /**
  * @brief Get system uptime.
@@ -2035,15 +2050,13 @@ __syscall s64_t k_uptime_ticks(void);
  * in milliseconds.
  *
  * @note
- *    @rst
  *    While this function returns time in milliseconds, it does
  *    not mean it has millisecond resolution. The actual resolution depends on
- *    :option:`CONFIG_SYS_CLOCK_TICKS_PER_SEC` config option.
- *    @endrst
+ *    @option{CONFIG_SYS_CLOCK_TICKS_PER_SEC} config option.
  *
  * @return Current uptime in milliseconds.
  */
-static inline s64_t k_uptime_get(void)
+static inline int64_t k_uptime_get(void)
 {
 	return k_ticks_to_ms_floor64(k_uptime_ticks());
 }
@@ -2052,8 +2065,8 @@ static inline s64_t k_uptime_get(void)
  * @brief Enable clock always on in tickless kernel
  *
  * Deprecated.  This does nothing (it was always just a hint).  This
- * functionality has been migrated to the SYSTEM_CLOCK_SLOPPY_IDLE
- * kconfig.
+ * functionality has been migrated to the
+ * @option{CONFIG_SYSTEM_CLOCK_SLOPPY_IDLE} config option.
  *
  * @retval prev_status Previous status of always on flag
  */
@@ -2071,8 +2084,8 @@ __deprecated static inline int k_enable_sys_clock_always_on(void)
  * @brief Disable clock always on in tickless kernel
  *
  * Deprecated.  This does nothing (it was always just a hint).  This
- * functionality has been migrated to the SYS_CLOCK_SLOPPY_IDLE
- * kconfig.
+ * functionality has been migrated to the
+ * @option{CONFIG_SYSTEM_CLOCK_SLOPPY_IDLE} config option.
  */
 /* LCOV_EXCL_START */
 __deprecated static inline void k_disable_sys_clock_always_on(void)
@@ -2095,17 +2108,15 @@ __deprecated static inline void k_disable_sys_clock_always_on(void)
  * interrupt blocking and 64-bit math.
  *
  * @note
- *    @rst
  *    While this function returns time in milliseconds, it does
  *    not mean it has millisecond resolution. The actual resolution depends on
- *    :option:`CONFIG_SYS_CLOCK_TICKS_PER_SEC` config option
- *    @endrst
+ *    @option{CONFIG_SYS_CLOCK_TICKS_PER_SEC} config option
  *
  * @return The low 32 bits of the current uptime, in milliseconds.
  */
-static inline u32_t k_uptime_get_32(void)
+static inline uint32_t k_uptime_get_32(void)
 {
-	return (u32_t)k_uptime_get();
+	return (uint32_t)k_uptime_get();
 }
 
 /**
@@ -2119,9 +2130,9 @@ static inline u32_t k_uptime_get_32(void)
  *
  * @return Elapsed time.
  */
-static inline s64_t k_uptime_delta(s64_t *reftime)
+static inline int64_t k_uptime_delta(int64_t *reftime)
 {
-	s64_t uptime, delta;
+	int64_t uptime, delta;
 
 	uptime = k_uptime_get();
 	delta = uptime - *reftime;
@@ -2145,9 +2156,9 @@ static inline s64_t k_uptime_delta(s64_t *reftime)
  *
  * @deprecated in 2.3 release, replace with k_uptime_delta()
  */
-__deprecated static inline u32_t k_uptime_delta_32(s64_t *reftime)
+__deprecated static inline uint32_t k_uptime_delta_32(int64_t *reftime)
 {
-	return (u32_t)k_uptime_delta(reftime);
+	return (uint32_t)k_uptime_delta(reftime);
 }
 
 /**
@@ -2158,7 +2169,7 @@ __deprecated static inline u32_t k_uptime_delta_32(s64_t *reftime)
  *
  * @return Current hardware clock up-counter (in cycles).
  */
-static inline u32_t k_cycle_get_32(void)
+static inline uint32_t k_cycle_get_32(void)
 {
 	return arch_k_cycle_get_32();
 }
@@ -2174,28 +2185,23 @@ static inline u32_t k_cycle_get_32(void)
 struct k_queue {
 	sys_sflist_t data_q;
 	struct k_spinlock lock;
-	union {
-		_wait_q_t wait_q;
+	_wait_q_t wait_q;
 
-		_POLL_EVENT;
-	};
-
+	_POLL_EVENT;
 	_OBJECT_TRACING_NEXT_PTR(k_queue)
 	_OBJECT_TRACING_LINKED_FLAG
 };
 
-#define _K_QUEUE_INITIALIZER(obj) \
+#define Z_QUEUE_INITIALIZER(obj) \
 	{ \
 	.data_q = SYS_SLIST_STATIC_INIT(&obj.data_q), \
 	.lock = { }, \
-	{ \
-		.wait_q = Z_WAIT_Q_INIT(&obj.wait_q), \
-		_POLL_EVENT_OBJ_INIT(obj) \
-	}, \
+	.wait_q = Z_WAIT_Q_INIT(&obj.wait_q),	\
+	_POLL_EVENT_OBJ_INIT(obj)		\
 	_OBJECT_TRACING_INIT \
 	}
 
-#define K_QUEUE_INITIALIZER __DEPRECATED_MACRO _K_QUEUE_INITIALIZER
+#define K_QUEUE_INITIALIZER __DEPRECATED_MACRO Z_QUEUE_INITIALIZER
 
 extern void *z_queue_node_peek(sys_sfnode_t *node, bool needs_free);
 
@@ -2269,7 +2275,7 @@ extern void k_queue_append(struct k_queue *queue, void *data);
  * @retval 0 on success
  * @retval -ENOMEM if there isn't sufficient RAM in the caller's resource pool
  */
-__syscall s32_t k_queue_alloc_append(struct k_queue *queue, void *data);
+__syscall int32_t k_queue_alloc_append(struct k_queue *queue, void *data);
 
 /**
  * @brief Prepend an element to a queue.
@@ -2303,7 +2309,7 @@ extern void k_queue_prepend(struct k_queue *queue, void *data);
  * @retval 0 on success
  * @retval -ENOMEM if there isn't sufficient RAM in the caller's resource pool
  */
-__syscall s32_t k_queue_alloc_prepend(struct k_queue *queue, void *data);
+__syscall int32_t k_queue_alloc_prepend(struct k_queue *queue, void *data);
 
 /**
  * @brief Inserts an element to a queue.
@@ -2487,7 +2493,7 @@ static inline void *z_impl_k_queue_peek_tail(struct k_queue *queue)
  */
 #define K_QUEUE_DEFINE(name) \
 	Z_STRUCT_SECTION_ITERABLE(k_queue, name) = \
-		_K_QUEUE_INITIALIZER(name)
+		Z_QUEUE_INITIALIZER(name)
 
 /** @} */
 
@@ -2578,7 +2584,7 @@ struct k_fifo {
  */
 #define Z_FIFO_INITIALIZER(obj) \
 	{ \
-	._queue = _K_QUEUE_INITIALIZER(obj._queue) \
+	._queue = Z_QUEUE_INITIALIZER(obj._queue) \
 	}
 
 #define K_FIFO_INITIALIZER __DEPRECATED_MACRO Z_FIFO_INITIALIZER
@@ -2768,7 +2774,7 @@ struct k_fifo {
  * @param name Name of the FIFO queue.
  */
 #define K_FIFO_DEFINE(name) \
-	Z_STRUCT_SECTION_ITERABLE(k_fifo, name) = \
+	Z_STRUCT_SECTION_ITERABLE_ALTERNATE(k_queue, k_fifo, name) = \
 		Z_FIFO_INITIALIZER(name)
 
 /** @} */
@@ -2781,12 +2787,12 @@ struct k_lifo {
  * @cond INTERNAL_HIDDEN
  */
 
-#define _K_LIFO_INITIALIZER(obj) \
+#define Z_LIFO_INITIALIZER(obj) \
 	{ \
-	._queue = _K_QUEUE_INITIALIZER(obj._queue) \
+	._queue = Z_QUEUE_INITIALIZER(obj._queue) \
 	}
 
-#define K_LIFO_INITIALIZER __DEPRECATED_MACRO _K_LIFO_INITIALIZER
+#define K_LIFO_INITIALIZER __DEPRECATED_MACRO Z_LIFO_INITIALIZER
 
 /**
  * INTERNAL_HIDDEN @endcond
@@ -2849,7 +2855,7 @@ struct k_lifo {
 /**
  * @brief Get an element from a LIFO queue.
  *
- * This routine removes a data item from @a lifo in a "last in, first out"
+ * This routine removes a data item from @a LIFO in a "last in, first out"
  * manner. The first word of the data item is reserved for the kernel's use.
  *
  * @note Can be called by ISRs, but @a timeout must be set to K_NO_WAIT.
@@ -2874,15 +2880,15 @@ struct k_lifo {
  * @param name Name of the fifo.
  */
 #define K_LIFO_DEFINE(name) \
-	Z_STRUCT_SECTION_ITERABLE(k_lifo, name) = \
-		_K_LIFO_INITIALIZER(name)
+	Z_STRUCT_SECTION_ITERABLE_ALTERNATE(k_queue, k_lifo, name) = \
+		Z_LIFO_INITIALIZER(name)
 
 /** @} */
 
 /**
  * @cond INTERNAL_HIDDEN
  */
-#define K_STACK_FLAG_ALLOC	((u8_t)1)	/* Buffer was allocated */
+#define K_STACK_FLAG_ALLOC	((uint8_t)1)	/* Buffer was allocated */
 
 typedef uintptr_t stack_data_t;
 
@@ -2893,10 +2899,10 @@ struct k_stack {
 
 	_OBJECT_TRACING_NEXT_PTR(k_stack)
 	_OBJECT_TRACING_LINKED_FLAG
-	u8_t flags;
+	uint8_t flags;
 };
 
-#define _K_STACK_INITIALIZER(obj, stack_buffer, stack_num_entries) \
+#define Z_STACK_INITIALIZER(obj, stack_buffer, stack_num_entries) \
 	{ \
 	.wait_q = Z_WAIT_Q_INIT(&obj.wait_q),	\
 	.base = stack_buffer, \
@@ -2905,7 +2911,7 @@ struct k_stack {
 	_OBJECT_TRACING_INIT \
 	}
 
-#define K_STACK_INITIALIZER __DEPRECATED_MACRO _K_STACK_INITIALIZER
+#define K_STACK_INITIALIZER __DEPRECATED_MACRO Z_STACK_INITIALIZER
 
 /**
  * INTERNAL_HIDDEN @endcond
@@ -2929,7 +2935,7 @@ struct k_stack {
  * @return N/A
  */
 void k_stack_init(struct k_stack *stack,
-		  stack_data_t *buffer, u32_t num_entries);
+		  stack_data_t *buffer, uint32_t num_entries);
 
 
 /**
@@ -2946,8 +2952,8 @@ void k_stack_init(struct k_stack *stack,
  * @return -ENOMEM if memory couldn't be allocated
  */
 
-__syscall s32_t k_stack_alloc_init(struct k_stack *stack,
-				   u32_t num_entries);
+__syscall int32_t k_stack_alloc_init(struct k_stack *stack,
+				   uint32_t num_entries);
 
 /**
  * @brief Release a stack's allocated buffer
@@ -3012,7 +3018,7 @@ __syscall int k_stack_pop(struct k_stack *stack, stack_data_t *data,
 	stack_data_t __noinit                                  \
 		_k_stack_buf_##name[stack_num_entries];        \
 	Z_STRUCT_SECTION_ITERABLE(k_stack, name) = \
-		_K_STACK_INITIALIZER(name, _k_stack_buf_##name, \
+		Z_STACK_INITIALIZER(name, _k_stack_buf_##name, \
 				    stack_num_entries)
 
 /** @} */
@@ -3021,7 +3027,7 @@ struct k_work;
 struct k_work_poll;
 
 /* private, used by k_poll and k_work_poll */
-typedef int (*_poller_cb_t)(struct k_poll_event *event, u32_t state);
+typedef int (*_poller_cb_t)(struct k_poll_event *event, uint32_t state);
 struct _poller {
 	volatile bool is_polling;
 	struct k_thread *thread;
@@ -3199,6 +3205,10 @@ static inline int k_work_submit_to_user_queue(struct k_work_q *work_q,
  * This routine indicates if work item @a work is pending in a workqueue's
  * queue.
  *
+ * @note Checking if the work is pending gives no guarantee that the
+ *       work will still be pending when this information is used. It is up to
+ *       the caller to make sure that this information is used in a safe manner.
+ *
  * @note Can be called by ISRs.
  *
  * @param work Address of work item.
@@ -3209,6 +3219,25 @@ static inline bool k_work_pending(struct k_work *work)
 {
 	return atomic_test_bit(work->flags, K_WORK_STATE_PENDING);
 }
+
+/**
+ * @brief  Check if a delayed work item is pending.
+ *
+ * This routine indicates if the work item @a work is pending in a workqueue's
+ * queue or waiting for the delay timeout.
+ *
+ * @note Checking if the delayed work is pending gives no guarantee that the
+ *       work will still be pending when this information is used. It is up to
+ *       the caller to make sure that this information is used in a safe manner.
+ *
+ * @note Can be called by ISRs.
+ *
+ * @param work Address of delayed work item.
+ *
+ * @return true if work item is waiting for the delay to expire or pending on a
+ *         work queue, or false if it is not pending.
+ */
+bool k_delayed_work_pending(struct k_delayed_work *work);
 
 /**
  * @brief Start a workqueue.
@@ -3431,7 +3460,7 @@ static inline k_ticks_t k_delayed_work_remaining_ticks(
  *
  * @return Remaining time (in milliseconds).
  */
-static inline s32_t k_delayed_work_remaining_get(struct k_delayed_work *work)
+static inline int32_t k_delayed_work_remaining_get(struct k_delayed_work *work)
 {
 	return k_ticks_to_ms_floor32(z_timeout_remaining(&work->timeout));
 }
@@ -3474,7 +3503,7 @@ extern void k_work_poll_init(struct k_work_poll *work,
  *
  * @param work_q Address of workqueue.
  * @param work Address of delayed work item.
- * @param events An array of pointers to events which trigger the work.
+ * @param events An array of events which trigger the work.
  * @param num_events The number of events in the array.
  * @param timeout Timeout after which the work will be scheduled
  *		  for execution even if not triggered.
@@ -3512,7 +3541,7 @@ extern int k_work_poll_submit_to_queue(struct k_work_q *work_q,
  * modified until the item has been processed by the workqueue.
  *
  * @param work Address of delayed work item.
- * @param events An array of pointers to events which trigger the work.
+ * @param events An array of events which trigger the work.
  * @param num_events The number of events in the array.
  * @param timeout Timeout after which the work will be scheduled
  *		  for execution even if not triggered.
@@ -3564,7 +3593,7 @@ struct k_mutex {
 	struct k_thread *owner;
 
 	/** Current lock count */
-	u32_t lock_count;
+	uint32_t lock_count;
 
 	/** Original thread priority */
 	int owner_orig_prio;
@@ -3576,7 +3605,7 @@ struct k_mutex {
 /**
  * @cond INTERNAL_HIDDEN
  */
-#define _K_MUTEX_INITIALIZER(obj) \
+#define Z_MUTEX_INITIALIZER(obj) \
 	{ \
 	.wait_q = Z_WAIT_Q_INIT(&obj.wait_q), \
 	.owner = NULL, \
@@ -3585,7 +3614,7 @@ struct k_mutex {
 	_OBJECT_TRACING_INIT \
 	}
 
-#define K_MUTEX_INITIALIZER __DEPRECATED_MACRO _K_MUTEX_INITIALIZER
+#define K_MUTEX_INITIALIZER __DEPRECATED_MACRO Z_MUTEX_INITIALIZER
 
 /**
  * INTERNAL_HIDDEN @endcond
@@ -3602,7 +3631,7 @@ struct k_mutex {
  */
 #define K_MUTEX_DEFINE(name) \
 	Z_STRUCT_SECTION_ITERABLE(k_mutex, name) = \
-		_K_MUTEX_INITIALIZER(name)
+		Z_MUTEX_INITIALIZER(name)
 
 /**
  * @brief Initialize a mutex.
@@ -3629,6 +3658,8 @@ __syscall int k_mutex_init(struct k_mutex *mutex);
  * A thread is permitted to lock a mutex it has already locked. The operation
  * completes immediately and the lock count is increased by 1.
  *
+ * Mutexes may not be locked in ISRs.
+ *
  * @param mutex Address of the mutex.
  * @param timeout Waiting period to lock the mutex,
  *                or one of the special values K_NO_WAIT and
@@ -3650,6 +3681,9 @@ __syscall int k_mutex_lock(struct k_mutex *mutex, k_timeout_t timeout);
  * the calling thread as many times as it was previously locked by that
  * thread.
  *
+ * Mutexes may not be unlocked in ISRs, as mutexes must only be manipulated
+ * in thread context due to ownership and priority inheritance semantics.
+ *
  * @param mutex Address of the mutex.
  *
  * @retval 0 Mutex unlocked.
@@ -3669,8 +3703,8 @@ __syscall int k_mutex_unlock(struct k_mutex *mutex);
 
 struct k_sem {
 	_wait_q_t wait_q;
-	u32_t count;
-	u32_t limit;
+	uint32_t count;
+	uint32_t limit;
 	_POLL_EVENT;
 
 	_OBJECT_TRACING_NEXT_PTR(k_sem)
@@ -3819,7 +3853,7 @@ struct k_msgq {
 	/** Message size */
 	size_t msg_size;
 	/** Maximal number of messages */
-	u32_t max_msgs;
+	uint32_t max_msgs;
 	/** Start of message buffer */
 	char *buffer_start;
 	/** End of message buffer */
@@ -3829,20 +3863,20 @@ struct k_msgq {
 	/** Write pointer */
 	char *write_ptr;
 	/** Number of used messages */
-	u32_t used_msgs;
+	uint32_t used_msgs;
 
 	_OBJECT_TRACING_NEXT_PTR(k_msgq)
 	_OBJECT_TRACING_LINKED_FLAG
 
 	/** Message queue */
-	u8_t flags;
+	uint8_t flags;
 };
 /**
  * @cond INTERNAL_HIDDEN
  */
 
 
-#define _K_MSGQ_INITIALIZER(obj, q_buffer, q_msg_size, q_max_msgs) \
+#define Z_MSGQ_INITIALIZER(obj, q_buffer, q_msg_size, q_max_msgs) \
 	{ \
 	.wait_q = Z_WAIT_Q_INIT(&obj.wait_q), \
 	.msg_size = q_msg_size, \
@@ -3854,7 +3888,7 @@ struct k_msgq {
 	.used_msgs = 0, \
 	_OBJECT_TRACING_INIT \
 	}
-#define K_MSGQ_INITIALIZER __DEPRECATED_MACRO _K_MSGQ_INITIALIZER
+#define K_MSGQ_INITIALIZER __DEPRECATED_MACRO Z_MSGQ_INITIALIZER
 /**
  * INTERNAL_HIDDEN @endcond
  */
@@ -3869,9 +3903,9 @@ struct k_msgq_attrs {
 	/** Message Size */
 	size_t msg_size;
 	/** Maximal number of messages */
-	u32_t max_msgs;
+	uint32_t max_msgs;
 	/** Used messages */
-	u32_t used_msgs;
+	uint32_t used_msgs;
 };
 
 
@@ -3899,7 +3933,7 @@ struct k_msgq_attrs {
 	static char __noinit __aligned(q_align)				\
 		_k_fifo_buf_##q_name[(q_max_msgs) * (q_msg_size)];	\
 	Z_STRUCT_SECTION_ITERABLE(k_msgq, q_name) =			\
-	       _K_MSGQ_INITIALIZER(q_name, _k_fifo_buf_##q_name,	\
+	       Z_MSGQ_INITIALIZER(q_name, _k_fifo_buf_##q_name,	\
 				  q_msg_size, q_max_msgs)
 
 /**
@@ -3921,7 +3955,7 @@ struct k_msgq_attrs {
  * @return N/A
  */
 void k_msgq_init(struct k_msgq *q, char *buffer, size_t msg_size,
-		 u32_t max_msgs);
+		 uint32_t max_msgs);
 
 /**
  * @brief Initialize a message queue.
@@ -3943,7 +3977,7 @@ void k_msgq_init(struct k_msgq *q, char *buffer, size_t msg_size,
  *	an integer overflow.
  */
 __syscall int k_msgq_alloc_init(struct k_msgq *msgq, size_t msg_size,
-				u32_t max_msgs);
+				uint32_t max_msgs);
 
 /**
  * @brief Release allocated buffer for a queue
@@ -4035,7 +4069,7 @@ __syscall void k_msgq_purge(struct k_msgq *msgq);
  *
  * @return Number of unused ring buffer entries.
  */
-__syscall u32_t k_msgq_num_free_get(struct k_msgq *msgq);
+__syscall uint32_t k_msgq_num_free_get(struct k_msgq *msgq);
 
 /**
  * @brief Get basic attributes of a message queue.
@@ -4051,7 +4085,7 @@ __syscall void  k_msgq_get_attrs(struct k_msgq *msgq,
 				 struct k_msgq_attrs *attrs);
 
 
-static inline u32_t z_impl_k_msgq_num_free_get(struct k_msgq *msgq)
+static inline uint32_t z_impl_k_msgq_num_free_get(struct k_msgq *msgq)
 {
 	return msgq->max_msgs - msgq->used_msgs;
 }
@@ -4065,9 +4099,9 @@ static inline u32_t z_impl_k_msgq_num_free_get(struct k_msgq *msgq)
  *
  * @return Number of messages.
  */
-__syscall u32_t k_msgq_num_used_get(struct k_msgq *msgq);
+__syscall uint32_t k_msgq_num_used_get(struct k_msgq *msgq);
 
-static inline u32_t z_impl_k_msgq_num_used_get(struct k_msgq *msgq)
+static inline uint32_t z_impl_k_msgq_num_used_get(struct k_msgq *msgq)
 {
 	return msgq->used_msgs;
 }
@@ -4086,11 +4120,11 @@ static inline u32_t z_impl_k_msgq_num_used_get(struct k_msgq *msgq)
  */
 struct k_mbox_msg {
 	/** internal use only - needed for legacy API support */
-	u32_t _mailbox;
+	uint32_t _mailbox;
 	/** size of message (in bytes) */
 	size_t size;
 	/** application-defined information value */
-	u32_t info;
+	uint32_t info;
 	/** sender's message data buffer */
 	void *tx_data;
 	/** internal use only - needed for legacy API support */
@@ -4126,14 +4160,14 @@ struct k_mbox {
  * @cond INTERNAL_HIDDEN
  */
 
-#define _K_MBOX_INITIALIZER(obj) \
+#define Z_MBOX_INITIALIZER(obj) \
 	{ \
 	.tx_msg_queue = Z_WAIT_Q_INIT(&obj.tx_msg_queue), \
 	.rx_msg_queue = Z_WAIT_Q_INIT(&obj.rx_msg_queue), \
 	_OBJECT_TRACING_INIT \
 	}
 
-#define K_MBOX_INITIALIZER __DEPRECATED_MACRO _K_MBOX_INITIALIZER
+#define K_MBOX_INITIALIZER __DEPRECATED_MACRO Z_MBOX_INITIALIZER
 
 /**
  * INTERNAL_HIDDEN @endcond
@@ -4150,7 +4184,7 @@ struct k_mbox {
  */
 #define K_MBOX_DEFINE(name) \
 	Z_STRUCT_SECTION_ITERABLE(k_mbox, name) = \
-		_K_MBOX_INITIALIZER(name) \
+		Z_MBOX_INITIALIZER(name) \
 
 /**
  * @brief Initialize a mailbox.
@@ -4295,11 +4329,11 @@ struct k_pipe {
 	struct {
 		_wait_q_t      readers; /**< Reader wait queue */
 		_wait_q_t      writers; /**< Writer wait queue */
-	} wait_q;
+	} wait_q;			/** Wait queue */
 
 	_OBJECT_TRACING_NEXT_PTR(k_pipe)
 	_OBJECT_TRACING_LINKED_FLAG
-	u8_t	       flags;		/**< Flags */
+	uint8_t	       flags;		/**< Flags */
 };
 
 /**
@@ -4307,7 +4341,7 @@ struct k_pipe {
  */
 #define K_PIPE_FLAG_ALLOC	BIT(0)	/** Buffer was allocated */
 
-#define _K_PIPE_INITIALIZER(obj, pipe_buffer, pipe_buffer_size)     \
+#define Z_PIPE_INITIALIZER(obj, pipe_buffer, pipe_buffer_size)     \
 	{                                                           \
 	.buffer = pipe_buffer,                                      \
 	.size = pipe_buffer_size,                                   \
@@ -4323,7 +4357,7 @@ struct k_pipe {
 	.flags = 0                                                  \
 	}
 
-#define K_PIPE_INITIALIZER __DEPRECATED_MACRO _K_PIPE_INITIALIZER
+#define K_PIPE_INITIALIZER __DEPRECATED_MACRO Z_PIPE_INITIALIZER
 
 /**
  * INTERNAL_HIDDEN @endcond
@@ -4346,7 +4380,7 @@ struct k_pipe {
 	static unsigned char __noinit __aligned(pipe_align)	\
 		_k_pipe_buf_##name[pipe_buffer_size];			\
 	Z_STRUCT_SECTION_ITERABLE(k_pipe, name) = \
-		_K_PIPE_INITIALIZER(name, _k_pipe_buf_##name, pipe_buffer_size)
+		Z_PIPE_INITIALIZER(name, _k_pipe_buf_##name, pipe_buffer_size)
 
 /**
  * @brief Initialize a pipe.
@@ -4455,6 +4489,26 @@ __syscall int k_pipe_get(struct k_pipe *pipe, void *data,
 extern void k_pipe_block_put(struct k_pipe *pipe, struct k_mem_block *block,
 			     size_t size, struct k_sem *sem);
 
+/**
+ * @brief Query the number of bytes that may be read from @a pipe.
+ *
+ * @param pipe Address of the pipe.
+ *
+ * @retval a number n such that 0 <= n <= @ref k_pipe.size; the
+ *         result is zero for unbuffered pipes.
+ */
+__syscall size_t k_pipe_read_avail(struct k_pipe *pipe);
+
+/**
+ * @brief Query the number of bytes that may be written to @a pipe
+ *
+ * @param pipe Address of the pipe.
+ *
+ * @retval a number n such that 0 <= n <= @ref k_pipe.size; the
+ *         result is zero for unbuffered pipes.
+ */
+__syscall size_t k_pipe_write_avail(struct k_pipe *pipe);
+
 /** @} */
 
 /**
@@ -4463,17 +4517,17 @@ extern void k_pipe_block_put(struct k_pipe *pipe, struct k_mem_block *block,
 
 struct k_mem_slab {
 	_wait_q_t wait_q;
-	u32_t num_blocks;
+	uint32_t num_blocks;
 	size_t block_size;
 	char *buffer;
 	char *free_list;
-	u32_t num_used;
+	uint32_t num_used;
 
 	_OBJECT_TRACING_NEXT_PTR(k_mem_slab)
 	_OBJECT_TRACING_LINKED_FLAG
 };
 
-#define _K_MEM_SLAB_INITIALIZER(obj, slab_buffer, slab_block_size, \
+#define Z_MEM_SLAB_INITIALIZER(obj, slab_buffer, slab_block_size, \
 			       slab_num_blocks) \
 	{ \
 	.wait_q = Z_WAIT_Q_INIT(&obj.wait_q), \
@@ -4485,7 +4539,7 @@ struct k_mem_slab {
 	_OBJECT_TRACING_INIT \
 	}
 
-#define K_MEM_SLAB_INITIALIZER __DEPRECATED_MACRO _K_MEM_SLAB_INITIALIZER
+#define K_MEM_SLAB_INITIALIZER __DEPRECATED_MACRO Z_MEM_SLAB_INITIALIZER
 
 
 /**
@@ -4521,7 +4575,7 @@ struct k_mem_slab {
 	char __noinit __aligned(WB_UP(slab_align)) \
 	   _k_mem_slab_buf_##name[(slab_num_blocks) * WB_UP(slab_block_size)]; \
 	Z_STRUCT_SECTION_ITERABLE(k_mem_slab, name) = \
-		_K_MEM_SLAB_INITIALIZER(name, _k_mem_slab_buf_##name, \
+		Z_MEM_SLAB_INITIALIZER(name, _k_mem_slab_buf_##name, \
 					WB_UP(slab_block_size), slab_num_blocks)
 
 /**
@@ -4546,12 +4600,14 @@ struct k_mem_slab {
  *
  */
 extern int k_mem_slab_init(struct k_mem_slab *slab, void *buffer,
-			   size_t block_size, u32_t num_blocks);
+			   size_t block_size, uint32_t num_blocks);
 
 /**
  * @brief Allocate memory from a memory slab.
  *
  * This routine allocates a memory block from a memory slab.
+ *
+ * @note Can be called by ISRs, but @a timeout must be set to K_NO_WAIT.
  *
  * @param slab Address of the memory slab.
  * @param mem Pointer to block address area.
@@ -4591,7 +4647,7 @@ extern void k_mem_slab_free(struct k_mem_slab *slab, void **mem);
  *
  * @return Number of allocated memory blocks.
  */
-static inline u32_t k_mem_slab_num_used_get(struct k_mem_slab *slab)
+static inline uint32_t k_mem_slab_num_used_get(struct k_mem_slab *slab)
 {
 	return slab->num_used;
 }
@@ -4606,7 +4662,7 @@ static inline u32_t k_mem_slab_num_used_get(struct k_mem_slab *slab)
  *
  * @return Number of unallocated memory blocks.
  */
-static inline u32_t k_mem_slab_num_free_get(struct k_mem_slab *slab)
+static inline uint32_t k_mem_slab_num_free_get(struct k_mem_slab *slab)
 {
 	return slab->num_blocks - slab->num_used;
 }
@@ -4642,6 +4698,8 @@ void k_heap_init(struct k_heap *h, void *mem, size_t bytes);
  * timeout API, or K_NO_WAIT or K_FOREVER) waiting for memory to be
  * freed.  If the allocation cannot be performed by the expiration of
  * the timeout, NULL will be returned.
+ *
+ * @note Can be called by ISRs, but @a timeout must be set to K_NO_WAIT.
  *
  * @param h Heap from which to allocate
  * @param bytes Desired size of block to allocate
@@ -4692,7 +4750,7 @@ void k_heap_free(struct k_heap *h, void *mem);
  * If the pool is to be accessed outside the module where it is defined, it
  * can be declared via
  *
- * @note When CONFIG_MEM_POOL_HEAP_BACKEND is enabled, the k_mem_pool
+ * @note When @option{CONFIG_MEM_POOL_HEAP_BACKEND} is enabled, the k_mem_pool
  * API is implemented on top of a k_heap, which is a more general
  * purpose allocator which does not make the same promises about
  * splitting or alignment detailed above.  Blocks will be aligned only
@@ -4715,6 +4773,8 @@ void k_heap_free(struct k_heap *h, void *mem);
  * @brief Allocate memory from a memory pool.
  *
  * This routine allocates a memory block from a memory pool.
+ *
+ * @note Can be called by ISRs, but @a timeout must be set to K_NO_WAIT.
  *
  * @param pool Address of the memory pool.
  * @param block Pointer to block descriptor for the allocated memory.
@@ -4837,7 +4897,7 @@ enum _poll_types_bits {
 	/* semaphore availability */
 	_POLL_TYPE_SEM_AVAILABLE,
 
-	/* queue/fifo/lifo data availability */
+	/* queue/FIFO/LIFO data availability */
 	_POLL_TYPE_DATA_AVAILABLE,
 
 	_POLL_NUM_TYPES
@@ -4856,10 +4916,10 @@ enum _poll_states_bits {
 	/* semaphore is available */
 	_POLL_STATE_SEM_AVAILABLE,
 
-	/* data is available to read on queue/fifo/lifo */
+	/* data is available to read on queue/FIFO/LIFO */
 	_POLL_STATE_DATA_AVAILABLE,
 
-	/* queue/fifo/lifo wait was cancelled */
+	/* queue/FIFO/LIFO wait was cancelled */
 	_POLL_STATE_CANCELLED,
 
 	_POLL_NUM_STATES
@@ -4942,19 +5002,19 @@ struct k_poll_event {
 	struct _poller *poller;
 
 	/** optional user-specified tag, opaque, untouched by the API */
-	u32_t tag:8;
+	uint32_t tag:8;
 
 	/** bitfield of event types (bitwise-ORed K_POLL_TYPE_xxx values) */
-	u32_t type:_POLL_NUM_TYPES;
+	uint32_t type:_POLL_NUM_TYPES;
 
 	/** bitfield of event states (bitwise-ORed K_POLL_STATE_xxx values) */
-	u32_t state:_POLL_NUM_STATES;
+	uint32_t state:_POLL_NUM_STATES;
 
 	/** mode of operation, from enum k_poll_modes */
-	u32_t mode:1;
+	uint32_t mode:1;
 
 	/** unused bits in 32-bit word */
-	u32_t unused:_POLL_EVENT_NUM_UNUSED_BITS;
+	uint32_t unused:_POLL_EVENT_NUM_UNUSED_BITS;
 
 	/** per-type data */
 	union {
@@ -4966,25 +5026,25 @@ struct k_poll_event {
 	};
 };
 
-#define K_POLL_EVENT_INITIALIZER(event_type, event_mode, event_obj) \
+#define K_POLL_EVENT_INITIALIZER(_event_type, _event_mode, _event_obj) \
 	{ \
 	.poller = NULL, \
-	.type = event_type, \
+	.type = _event_type, \
 	.state = K_POLL_STATE_NOT_READY, \
-	.mode = event_mode, \
+	.mode = _event_mode, \
 	.unused = 0, \
-	{ .obj = event_obj }, \
+	.obj = _event_obj, \
 	}
 
-#define K_POLL_EVENT_STATIC_INITIALIZER(event_type, event_mode, event_obj, \
+#define K_POLL_EVENT_STATIC_INITIALIZER(_event_type, _event_mode, _event_obj, \
 					event_tag) \
 	{ \
 	.tag = event_tag, \
-	.type = event_type, \
+	.type = _event_type, \
 	.state = K_POLL_STATE_NOT_READY, \
-	.mode = event_mode, \
+	.mode = _event_mode, \
 	.unused = 0, \
-	{ .obj = event_obj }, \
+	.obj = _event_obj, \
 	}
 
 /**
@@ -5004,7 +5064,7 @@ struct k_poll_event {
  * @return N/A
  */
 
-extern void k_poll_event_init(struct k_poll_event *event, u32_t type,
+extern void k_poll_event_init(struct k_poll_event *event, uint32_t type,
 			      int mode, void *obj);
 
 /**
@@ -5034,7 +5094,7 @@ extern void k_poll_event_init(struct k_poll_event *event, u32_t type,
  * When called from user mode, a temporary memory allocation is required from
  * the caller's resource pool.
  *
- * @param events An array of pointers to events to be polled for.
+ * @param events An array of events to be polled for.
  * @param num_events The number of events in the array.
  * @param timeout Waiting period for an event to be ready,
  *                or one of the special values K_NO_WAIT and K_FOREVER.
@@ -5119,7 +5179,7 @@ __syscall int k_poll_signal_raise(struct k_poll_signal *signal, int result);
 /**
  * @internal
  */
-extern void z_handle_obj_poll_events(sys_dlist_t *events, u32_t state);
+extern void z_handle_obj_poll_events(sys_dlist_t *events, uint32_t state);
 
 /** @} */
 
@@ -5170,7 +5230,7 @@ static inline void k_cpu_atomic_idle(unsigned int key)
 /**
  * @internal
  */
-extern void z_sys_power_save_idle_exit(s32_t ticks);
+extern void z_sys_power_save_idle_exit(int32_t ticks);
 
 #ifdef ARCH_EXCEPT
 /* This architecture has direct support for triggering a CPU exception */
@@ -5228,7 +5288,7 @@ extern void z_sys_power_save_idle_exit(s32_t ticks);
  * @internal
  */
 extern void z_init_thread_base(struct _thread_base *thread_base,
-			      int priority, u32_t initial_state,
+			      int priority, uint32_t initial_state,
 			      unsigned int options);
 
 #ifdef CONFIG_MULTITHREADING
@@ -5251,283 +5311,6 @@ extern bool z_is_thread_essential(void);
  * @internal
  */
 extern void z_timer_expiration_handler(struct _timeout *t);
-
-/* arch/cpu.h may declare an architecture or platform-specific macro
- * for properly declaring stacks, compatible with MMU/MPU constraints if
- * enabled
- */
-
-/**
- * @brief Obtain an extern reference to a stack
- *
- * This macro properly brings the symbol of a thread stack declared
- * elsewhere into scope.
- *
- * @param sym Thread stack symbol name
- */
-#define K_THREAD_STACK_EXTERN(sym) extern k_thread_stack_t sym[]
-
-#ifdef ARCH_THREAD_STACK_DEFINE
-#define K_THREAD_STACK_DEFINE(sym, size) ARCH_THREAD_STACK_DEFINE(sym, size)
-#define K_THREAD_STACK_ARRAY_DEFINE(sym, nmemb, size) \
-		ARCH_THREAD_STACK_ARRAY_DEFINE(sym, nmemb, size)
-#define K_THREAD_STACK_LEN(size) ARCH_THREAD_STACK_LEN(size)
-#define K_THREAD_STACK_MEMBER(sym, size) ARCH_THREAD_STACK_MEMBER(sym, size)
-#define K_THREAD_STACK_SIZEOF(sym) ARCH_THREAD_STACK_SIZEOF(sym)
-#define K_THREAD_STACK_RESERVED ((size_t)ARCH_THREAD_STACK_RESERVED)
-static inline char *Z_THREAD_STACK_BUFFER(k_thread_stack_t *sym)
-{
-	return ARCH_THREAD_STACK_BUFFER(sym);
-}
-#else
-/**
- * @brief Declare a toplevel thread stack memory region
- *
- * This declares a region of memory suitable for use as a thread's stack.
- *
- * This is the generic, historical definition. Align to STACK_ALIGN and put in
- * 'noinit' section so that it isn't zeroed at boot
- *
- * The declared symbol will always be a k_thread_stack_t which can be passed to
- * k_thread_create(), but should otherwise not be manipulated. If the buffer
- * inside needs to be examined, examine thread->stack_info for the associated
- * thread object to obtain the boundaries.
- *
- * It is legal to precede this definition with the 'static' keyword.
- *
- * It is NOT legal to take the sizeof(sym) and pass that to the stackSize
- * parameter of k_thread_create(), it may not be the same as the
- * 'size' parameter. Use K_THREAD_STACK_SIZEOF() instead.
- *
- * Some arches may round the size of the usable stack region up to satisfy
- * alignment constraints. K_THREAD_STACK_SIZEOF() will return the aligned
- * size.
- *
- * @param sym Thread stack symbol name
- * @param size Size of the stack memory region
- */
-#define K_THREAD_STACK_DEFINE(sym, size) \
-	struct z_thread_stack_element __noinit __aligned(STACK_ALIGN) sym[size]
-
-/**
- * @brief Calculate size of stacks to be allocated in a stack array
- *
- * This macro calculates the size to be allocated for the stacks
- * inside a stack array. It accepts the indicated "size" as a parameter
- * and if required, pads some extra bytes (e.g. for MPU scenarios). Refer
- * K_THREAD_STACK_ARRAY_DEFINE definition to see how this is used.
- *
- * @param size Size of the stack memory region
- */
-#define K_THREAD_STACK_LEN(size) (size)
-
-/**
- * @brief Declare a toplevel array of thread stack memory regions
- *
- * Create an array of equally sized stacks. See K_THREAD_STACK_DEFINE
- * definition for additional details and constraints.
- *
- * This is the generic, historical definition. Align to STACK_ALIGN and put in
- * 'noinit' section so that it isn't zeroed at boot
- *
- * @param sym Thread stack symbol name
- * @param nmemb Number of stacks to declare
- * @param size Size of the stack memory region
- */
-#define K_THREAD_STACK_ARRAY_DEFINE(sym, nmemb, size) \
-	struct z_thread_stack_element __noinit \
-		__aligned(STACK_ALIGN) sym[nmemb][K_THREAD_STACK_LEN(size)]
-
-/**
- * @brief Declare an embedded stack memory region
- *
- * Used for stacks embedded within other data structures. Use is highly
- * discouraged but in some cases necessary. For memory protection scenarios,
- * it is very important that any RAM preceding this member not be writable
- * by threads else a stack overflow will lead to silent corruption. In other
- * words, the containing data structure should live in RAM owned by the kernel.
- *
- * @param sym Thread stack symbol name
- * @param size Size of the stack memory region
- */
-#define K_THREAD_STACK_MEMBER(sym, size) \
-	struct z_thread_stack_element __aligned(STACK_ALIGN) sym[size]
-
-/**
- * @brief Return the size in bytes of a stack memory region
- *
- * Convenience macro for passing the desired stack size to k_thread_create()
- * since the underlying implementation may actually create something larger
- * (for instance a guard area).
- *
- * The value returned here is not guaranteed to match the 'size' parameter
- * passed to K_THREAD_STACK_DEFINE and may be larger.
- *
- * @param sym Stack memory symbol
- * @return Size of the stack
- */
-#define K_THREAD_STACK_SIZEOF(sym) sizeof(sym)
-
-
-/**
- * @brief Indicate how much additional memory is reserved for stack objects
- *
- * Any given stack declaration may have additional memory in it for guard
- * areas or supervisor mode stacks. This macro indicates how much space
- * is reserved for this. The memory reserved may not be contiguous within
- * the stack object, and does not account for additional space used due to
- * enforce alignment.
- */
-#define K_THREAD_STACK_RESERVED		((size_t)0U)
-
-/**
- * @brief Get a pointer to the physical stack buffer
- *
- * This macro is deprecated. If a stack buffer needs to be examined, the
- * bounds should be obtained from the associated thread's stack_info struct.
- *
- * @param sym Declared stack symbol name
- * @return The buffer itself, a char *
- */
-static inline char *Z_THREAD_STACK_BUFFER(k_thread_stack_t *sym)
-{
-	return (char *)sym;
-}
-
-#endif /* _ARCH_DECLARE_STACK */
-
-/**
- * @defgroup mem_domain_apis Memory domain APIs
- * @ingroup kernel_apis
- * @{
- */
-
-/**
- * @def K_MEM_PARTITION_DEFINE
- * @brief Used to declare a memory partition
- */
-#ifdef _ARCH_MEM_PARTITION_ALIGN_CHECK
-#define K_MEM_PARTITION_DEFINE(name, start, size, attr) \
-	_ARCH_MEM_PARTITION_ALIGN_CHECK(start, size); \
-	struct k_mem_partition name =\
-		{ (uintptr_t)start, size, attr}
-#else
-#define K_MEM_PARTITION_DEFINE(name, start, size, attr) \
-	struct k_mem_partition name =\
-		{ (uintptr_t)start, size, attr}
-#endif /* _ARCH_MEM_PARTITION_ALIGN_CHECK */
-
-/* memory partition */
-struct k_mem_partition {
-	/** start address of memory partition */
-	uintptr_t start;
-	/** size of memory partition */
-	size_t size;
-#if defined(CONFIG_MEMORY_PROTECTION)
-	/** attribute of memory partition */
-	k_mem_partition_attr_t attr;
-#endif /* CONFIG_MEMORY_PROTECTION */
-};
-
-/**
- * @brief Memory Domain
- *
- */
-struct k_mem_domain {
-#ifdef CONFIG_USERSPACE
-	/** partitions in the domain */
-	struct k_mem_partition partitions[CONFIG_MAX_DOMAIN_PARTITIONS];
-#endif	/* CONFIG_USERSPACE */
-	/** domain q */
-	sys_dlist_t mem_domain_q;
-	/** number of partitions in the domain */
-	u8_t num_partitions;
-};
-
-
-/**
- * @brief Initialize a memory domain.
- *
- * Initialize a memory domain with given name and memory partitions.
- *
- * See documentation for k_mem_domain_add_partition() for details about
- * partition constraints.
- *
- * @param domain The memory domain to be initialized.
- * @param num_parts The number of array items of "parts" parameter.
- * @param parts An array of pointers to the memory partitions. Can be NULL
- *              if num_parts is zero.
- */
-extern void k_mem_domain_init(struct k_mem_domain *domain, u8_t num_parts,
-			      struct k_mem_partition *parts[]);
-/**
- * @brief Destroy a memory domain.
- *
- * Destroy a memory domain.
- *
- * @param domain The memory domain to be destroyed.
- */
-extern void k_mem_domain_destroy(struct k_mem_domain *domain);
-
-/**
- * @brief Add a memory partition into a memory domain.
- *
- * Add a memory partition into a memory domain. Partitions must conform to
- * the following constraints:
- *
- * - Partition bounds must be within system RAM boundaries on MMU-based
- *   systems.
- * - Partitions in the same memory domain may not overlap each other.
- * - Partitions must not be defined which expose private kernel
- *   data structures or kernel objects.
- * - The starting address alignment, and the partition size must conform to
- *   the constraints of the underlying memory management hardware, which
- *   varies per architecture.
- * - Memory domain partitions are only intended to control access to memory
- *   from user mode threads.
- *
- * Violating these constraints may lead to CPU exceptions or undefined
- * behavior.
- *
- * @param domain The memory domain to be added a memory partition.
- * @param part The memory partition to be added
- */
-extern void k_mem_domain_add_partition(struct k_mem_domain *domain,
-				      struct k_mem_partition *part);
-
-/**
- * @brief Remove a memory partition from a memory domain.
- *
- * Remove a memory partition from a memory domain.
- *
- * @param domain The memory domain to be removed a memory partition.
- * @param part The memory partition to be removed
- */
-extern void k_mem_domain_remove_partition(struct k_mem_domain *domain,
-					 struct k_mem_partition *part);
-
-/**
- * @brief Add a thread into a memory domain.
- *
- * Add a thread into a memory domain.
- *
- * @param domain The memory domain that the thread is going to be added into.
- * @param thread ID of thread going to be added into the memory domain.
- *
- */
-extern void k_mem_domain_add_thread(struct k_mem_domain *domain,
-				    k_tid_t thread);
-
-/**
- * @brief Remove a thread from its memory domain.
- *
- * Remove a thread from its memory domain.
- *
- * @param thread ID of thread going to be removed from its memory domain.
- */
-extern void k_mem_domain_remove_thread(k_tid_t thread);
-
-/** @} */
 
 #ifdef CONFIG_PRINTK
 /**

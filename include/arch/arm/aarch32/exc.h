@@ -15,10 +15,13 @@
 #ifndef ZEPHYR_INCLUDE_ARCH_ARM_AARCH32_EXC_H_
 #define ZEPHYR_INCLUDE_ARCH_ARM_AARCH32_EXC_H_
 
+#if defined(CONFIG_CPU_CORTEX_M)
 #include <devicetree.h>
 
+#include <arch/arm/aarch32/cortex_m/nvic.h>
+
 /* for assembler, only works with constants */
-#define Z_EXC_PRIO(pri) (((pri) << (8 - DT_NUM_IRQ_PRIO_BITS)) & 0xff)
+#define Z_EXC_PRIO(pri) (((pri) << (8 - NUM_IRQ_PRIO_BITS)) & 0xff)
 
 /*
  * In architecture variants with non-programmable fault exceptions
@@ -59,6 +62,7 @@
 /* Use lowest possible priority level for PendSV */
 #define _EXC_PENDSV_PRIO 0xff
 #define _EXC_PENDSV_PRIO_MASK Z_EXC_PRIO(_EXC_PENDSV_PRIO)
+#endif /* CONFIG_CPU_CORTEX_M */
 
 #ifdef _ASMLANGUAGE
 GTEXT(z_arm_exc_exit);
@@ -69,6 +73,20 @@ GTEXT(z_arm_exc_exit);
 extern "C" {
 #endif
 
+/* Additional register state that is not stacked by hardware on exception
+ * entry.
+ *
+ * These fields are ONLY valid in the ESF copy passed into z_arm_fatal_error().
+ * When information for a member is unavailable, the field is set to zero.
+ */
+#if defined(CONFIG_EXTRA_EXCEPTION_INFO)
+struct __extra_esf_info {
+	_callee_saved_t *callee;
+	uint32_t msp;
+	uint32_t exc_return;
+};
+#endif /* CONFIG_EXTRA_EXCEPTION_INFO */
+
 struct __esf {
 	struct __basic_sf {
 		sys_define_gpr_with_alias(a1, r0);
@@ -78,18 +96,27 @@ struct __esf {
 		sys_define_gpr_with_alias(ip, r12);
 		sys_define_gpr_with_alias(lr, r14);
 		sys_define_gpr_with_alias(pc, r15);
-		u32_t xpsr;
+		uint32_t xpsr;
 	} basic;
-#if defined(CONFIG_FLOAT) && defined(CONFIG_FP_SHARING)
+#if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
 	float s[16];
-	u32_t fpscr;
-	u32_t undefined;
+	uint32_t fpscr;
+	uint32_t undefined;
+#endif
+#if defined(CONFIG_EXTRA_EXCEPTION_INFO)
+	struct __extra_esf_info extra_info;
 #endif
 };
 
+extern uint32_t z_arm_coredump_fault_sp;
+
 typedef struct __esf z_arch_esf_t;
 
+#ifdef CONFIG_CPU_CORTEX_M
 extern void z_arm_exc_exit(void);
+#else
+extern void z_arm_exc_exit(bool fatal);
+#endif
 
 #ifdef __cplusplus
 }

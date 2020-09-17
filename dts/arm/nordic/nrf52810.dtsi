@@ -8,6 +8,7 @@
 / {
 	chosen {
 		zephyr,entropy = &rng;
+		zephyr,flash-controller = &flash_controller;
 	};
 
 	cpus {
@@ -19,23 +20,6 @@
 			compatible = "arm,cortex-m4";
 			reg = <0>;
 		};
-	};
-
-	aliases {
-		i2c-0 = &i2c0;
-		spi-0 = &spi0;
-		uart-0 = &uart0;
-		adc-0 = &adc;
-		gpio-0 = &gpio0;
-		gpiote-0 = &gpiote;
-		wdt-0 = &wdt;
-		pwm-0 = &pwm0;
-		qdec-0 = &qdec;
-		rtc-0 = &rtc0;
-		rtc-1 = &rtc1;
-		timer-0 = &timer0;
-		timer-1 = &timer1;
-		timer-2 = &timer2;
 	};
 
 	soc {
@@ -217,7 +201,7 @@
 			label = "TEMP_0";
 		};
 
-		wdt: watchdog@40010000 {
+		wdt: wdt0: watchdog@40010000 {
 			compatible = "nordic,nrf-watchdog";
 			reg = <0x40010000 0x1000>;
 			interrupts = <16 1>;

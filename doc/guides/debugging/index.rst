@@ -8,3 +8,6 @@ Debugging
 
    host-tools.rst
    probes.rst
+   thread-analyzer.rst
+   coredump.rst
+   gdbstub.rst

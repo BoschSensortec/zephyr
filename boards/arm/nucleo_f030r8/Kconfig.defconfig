@@ -8,28 +8,4 @@ if BOARD_NUCLEO_F030R8
 config BOARD
 	default "nucleo_f030r8"
 
-config UART_2
-	default y
-	depends on UART_CONSOLE
-
-if I2C
-
-config I2C_1
-	default y
-
-config I2C_2
-	default y
-
-endif
-
-if SPI
-
-config SPI_1
-	default y
-
-config SPI_2
-	default y
-
-endif
-
 endif # BOARD_NUCLEO_F030R8

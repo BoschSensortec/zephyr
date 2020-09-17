@@ -2,7 +2,11 @@
 
 cmake_minimum_required(VERSION 3.13.1)
 
-find_package(Zephyr HINTS $ENV{ZEPHYR_BASE})
+macro(app_set_runner_args)
+  board_runner_args(canopen "--node-id=${CONFIG_CANOPEN_NODE_ID}")
+endmacro()
+
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(CANopen)
 
 target_sources(app PRIVATE src/main.c objdict/CO_OD.c)

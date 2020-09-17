@@ -14,10 +14,8 @@
 #include <kernel_structs.h>
 #include <debug/object_tracing_common.h>
 #include <toolchain.h>
-#include <linker/sections.h>
 #include <ksched.h>
 #include <wait_q.h>
-#include <sys/dlist.h>
 #include <init.h>
 #include <syscall_handler.h>
 #include <kernel_internal.h>
@@ -83,7 +81,7 @@ static void pipe_async_finish(struct k_pipe_async *async_desc)
 /*
  * Do run-time initialization of pipe object subsystem.
  */
-static int init_pipes_module(struct device *dev)
+static int init_pipes_module(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 
@@ -135,10 +133,11 @@ void k_pipe_init(struct k_pipe *pipe, unsigned char *buffer, size_t size)
 	pipe->bytes_used = 0;
 	pipe->read_index = 0;
 	pipe->write_index = 0;
-	pipe->flags = 0;
+	pipe->lock = (struct k_spinlock){};
 	z_waitq_init(&pipe->wait_q.writers);
 	z_waitq_init(&pipe->wait_q.readers);
 	SYS_TRACING_OBJ_INIT(k_pipe, pipe);
+	pipe->flags = 0;
 	z_object_init(pipe);
 }
 
@@ -528,7 +527,20 @@ int z_pipe_put_internal(struct k_pipe *pipe, struct k_pipe_async *async_desc,
 		return 0;
 	}
 
-	/* Not all data was copied. */
+	if (!K_TIMEOUT_EQ(timeout, K_NO_WAIT)
+	    && num_bytes_written >= min_xfer
+	    && min_xfer > 0) {
+		*bytes_written = num_bytes_written;
+#if (CONFIG_NUM_PIPE_ASYNC_MSGS > 0)
+		if (async_desc != NULL) {
+			pipe_async_finish(async_desc);
+		}
+#endif
+		k_sched_unlock();
+		return 0;
+	}
+
+	/* Not all data was copied */
 
 #if (CONFIG_NUM_PIPE_ASYNC_MSGS > 0)
 	if (async_desc != NULL) {
@@ -536,7 +548,7 @@ int z_pipe_put_internal(struct k_pipe *pipe, struct k_pipe_async *async_desc,
 		 * Lock interrupts and unlock the scheduler before
 		 * manipulating the writers wait_q.
 		 */
-		k_spinlock_key_t key = k_spin_lock(&pipe->lock);
+		k_spinlock_key_t key2 = k_spin_lock(&pipe->lock);
 		z_sched_unlock_no_reschedule();
 
 		async_desc->desc.buffer = data + num_bytes_written;
@@ -545,7 +557,7 @@ int z_pipe_put_internal(struct k_pipe *pipe, struct k_pipe_async *async_desc,
 
 		z_pend_thread((struct k_thread *) &async_desc->thread,
 			     &pipe->wait_q.writers, K_FOREVER);
-		z_reschedule(&pipe->lock, key);
+		z_reschedule(&pipe->lock, key2);
 		return 0;
 	}
 #endif
@@ -561,9 +573,9 @@ int z_pipe_put_internal(struct k_pipe *pipe, struct k_pipe_async *async_desc,
 		 * Lock interrupts and unlock the scheduler before
 		 * manipulating the writers wait_q.
 		 */
-		k_spinlock_key_t key = k_spin_lock(&pipe->lock);
+		k_spinlock_key_t key2 = k_spin_lock(&pipe->lock);
 		z_sched_unlock_no_reschedule();
-		(void)z_pend_curr(&pipe->lock, key,
+		(void)z_pend_curr(&pipe->lock, key2,
 				 &pipe->wait_q.writers, timeout);
 	} else {
 		k_sched_unlock();
@@ -625,7 +637,7 @@ int z_impl_k_pipe_get(struct k_pipe *pipe, void *data, size_t bytes_to_read,
 				  sys_dlist_get(&xfer_list);
 	while ((thread != NULL) && (num_bytes_read < bytes_to_read)) {
 		desc = (struct k_pipe_desc *)thread->base.swap_data;
-		bytes_copied = pipe_xfer((u8_t *)data + num_bytes_read,
+		bytes_copied = pipe_xfer((uint8_t *)data + num_bytes_read,
 					  bytes_to_read - num_bytes_read,
 					  desc->buffer, desc->bytes_to_xfer);
 
@@ -649,7 +661,7 @@ int z_impl_k_pipe_get(struct k_pipe *pipe, void *data, size_t bytes_to_read,
 
 	if ((writer != NULL) && (num_bytes_read < bytes_to_read)) {
 		desc = (struct k_pipe_desc *)writer->base.swap_data;
-		bytes_copied = pipe_xfer((u8_t *)data + num_bytes_read,
+		bytes_copied = pipe_xfer((uint8_t *)data + num_bytes_read,
 					  bytes_to_read - num_bytes_read,
 					  desc->buffer, desc->bytes_to_xfer);
 
@@ -694,19 +706,29 @@ int z_impl_k_pipe_get(struct k_pipe *pipe, void *data, size_t bytes_to_read,
 		return 0;
 	}
 
-	/* Not all data was read. */
+	if (!K_TIMEOUT_EQ(timeout, K_NO_WAIT)
+	    && num_bytes_read >= min_xfer
+	    && min_xfer > 0) {
+		k_sched_unlock();
+
+		*bytes_read = num_bytes_read;
+
+		return 0;
+	}
+
+	/* Not all data was read */
 
 	struct k_pipe_desc  pipe_desc;
 
-	pipe_desc.buffer        = (u8_t *)data + num_bytes_read;
+	pipe_desc.buffer        = (uint8_t *)data + num_bytes_read;
 	pipe_desc.bytes_to_xfer = bytes_to_read - num_bytes_read;
 
 	if (!K_TIMEOUT_EQ(timeout, K_NO_WAIT)) {
 		_current->base.swap_data = &pipe_desc;
-		k_spinlock_key_t key = k_spin_lock(&pipe->lock);
+		k_spinlock_key_t key2 = k_spin_lock(&pipe->lock);
 
 		z_sched_unlock_no_reschedule();
-		(void)z_pend_curr(&pipe->lock, key,
+		(void)z_pend_curr(&pipe->lock, key2,
 				 &pipe->wait_q.readers, timeout);
 	} else {
 		k_sched_unlock();
@@ -780,4 +802,78 @@ void k_pipe_block_put(struct k_pipe *pipe, struct k_mem_block *block,
 				    bytes_to_write, &dummy_bytes_written,
 				    bytes_to_write, K_FOREVER);
 }
+#endif
+
+size_t z_impl_k_pipe_read_avail(struct k_pipe *pipe)
+{
+	size_t res;
+	k_spinlock_key_t key;
+
+	/* Buffer and size are fixed. No need to spin. */
+	if (pipe->buffer == NULL || pipe->size == 0) {
+		res = 0;
+		goto out;
+	}
+
+	key = k_spin_lock(&pipe->lock);
+
+	if (pipe->read_index == pipe->write_index) {
+		res = pipe->bytes_used;
+	} else if (pipe->read_index < pipe->write_index) {
+		res = pipe->write_index - pipe->read_index;
+	} else {
+		res = pipe->size - (pipe->read_index - pipe->write_index);
+	}
+
+	k_spin_unlock(&pipe->lock, key);
+
+out:
+	return res;
+}
+
+#ifdef CONFIG_USERSPACE
+size_t z_vrfy_k_pipe_read_avail(struct k_pipe *pipe)
+{
+	Z_OOPS(Z_SYSCALL_OBJ(pipe, K_OBJ_PIPE));
+
+	return z_impl_k_pipe_read_avail(pipe);
+}
+#include <syscalls/k_pipe_read_avail_mrsh.c>
+#endif
+
+size_t z_impl_k_pipe_write_avail(struct k_pipe *pipe)
+{
+	size_t res;
+	k_spinlock_key_t key;
+
+	/* Buffer and size are fixed. No need to spin. */
+	if (pipe->buffer == NULL || pipe->size == 0) {
+		res = 0;
+		goto out;
+	}
+
+	key = k_spin_lock(&pipe->lock);
+
+	if (pipe->write_index == pipe->read_index) {
+		res = pipe->size - pipe->bytes_used;
+	} else if (pipe->write_index < pipe->read_index) {
+		res = pipe->read_index - pipe->write_index;
+	} else {
+		res = pipe->size - (pipe->write_index - pipe->read_index);
+	}
+
+	k_spin_unlock(&pipe->lock, key);
+
+out:
+	return res;
+}
+
+#ifdef CONFIG_USERSPACE
+size_t z_vrfy_k_pipe_write_avail(struct k_pipe *pipe)
+{
+	Z_OOPS(Z_SYSCALL_OBJ(pipe, K_OBJ_PIPE));
+
+	return z_impl_k_pipe_write_avail(pipe);
+}
+#include <syscalls/k_pipe_write_avail_mrsh.c>
 #endif

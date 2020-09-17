@@ -10,7 +10,7 @@
 
 / {
 	model = "QEMU Cortex-M0";
-	compatible = "nordic,nrf51822-qfaa", "nordic,nrf51822";
+	compatible = "bbc,qemu-microbit";
 
 	chosen {
 		zephyr,console = &uart0;
@@ -41,7 +41,7 @@
 &flash0 {
 	/*
 	 * For more information, see:
-	 * http://docs.zephyrproject.org/latest/guides/dts/index.html#flash-partitions
+	 * https://docs.zephyrproject.org/latest/guides/dts/legacy-macros.html#legacy-flash-partitions
 	 */
 	partitions {
 		compatible = "fixed-partitions";

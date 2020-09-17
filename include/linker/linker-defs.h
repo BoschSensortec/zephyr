@@ -20,75 +20,62 @@
 #define ZEPHYR_INCLUDE_LINKER_LINKER_DEFS_H_
 
 #include <toolchain.h>
+#include <toolchain/common.h>
 #include <linker/sections.h>
 #include <sys/util.h>
 #include <offsets.h>
 
-#ifdef _LINKER
-
-
-/*
- * Space for storing per device busy bitmap. Since we do not know beforehand
- * the number of devices, we go through the below mechanism to allocate the
- * required space.
+/* We need to dummy out DT_NODE_HAS_STATUS when building the unittests.
+ * Including devicetree.h would require generating dummy header files
+ * to match what gen_defines creates, so it's easier to just dummy out
+ * DT_NODE_HAS_STATUS.
  */
-#ifdef CONFIG_DEVICE_POWER_MANAGEMENT
-#define DEVICE_COUNT \
-	((__device_init_end - __device_init_start) / _DEVICE_STRUCT_SIZEOF)
-#define DEV_BUSY_SZ	(((DEVICE_COUNT + 31) / 32) * 4)
-#define DEVICE_BUSY_BITFIELD()			\
-		FILL(0x00) ;			\
-		__device_busy_start = .;	\
-		. = . + DEV_BUSY_SZ;		\
-		__device_busy_end = .;
+#ifdef ZTEST_UNITTEST
+#define DT_NODE_HAS_STATUS(node, status) 0
 #else
-#define DEVICE_BUSY_BITFIELD()
+#include <devicetree.h>
 #endif
 
-/*
- * generate a symbol to mark the start of the device initialization objects for
- * the specified level, then link all of those objects (sorted by priority);
- * ensure the objects aren't discarded if there is no direct reference to them
+#ifdef _LINKER
+#define Z_LINK_ITERABLE(struct_type) \
+	_CONCAT(_##struct_type, _list_start) = .; \
+	KEEP(*(SORT_BY_NAME(._##struct_type.static.*))); \
+	_CONCAT(_##struct_type, _list_end) = .
+
+/* Define an output section which will set up an iterable area
+ * of equally-sized data structures. For use with Z_STRUCT_SECTION_ITERABLE.
+ * Input sections will be sorted by name, per ld's SORT_BY_NAME.
+ *
+ * This macro should be used for read-only data.
  */
+#define Z_ITERABLE_SECTION_ROM(struct_type, subalign) \
+	SECTION_PROLOGUE(struct_type##_area,,SUBALIGN(subalign)) \
+	{ \
+		Z_LINK_ITERABLE(struct_type); \
+	} GROUP_LINK_IN(ROMABLE_REGION)
 
-#define DEVICE_INIT_LEVEL(level)				\
-		__device_##level##_start = .;			\
-		KEEP(*(SORT(.init_##level[0-9])));		\
-		KEEP(*(SORT(.init_##level[1-9][0-9])));	\
-
-/*
- * link in device initialization objects for all devices that are automatically
- * initialized by the kernel; the objects are sorted in the order they will be
- * initialized (i.e. ordered by level, sorted by priority within a level)
+/* Define an output section which will set up an iterable area
+ * of equally-sized data structures. For use with Z_STRUCT_SECTION_ITERABLE.
+ * Input sections will be sorted by name, per ld's SORT_BY_NAME.
+ *
+ * This macro should be used for read-write data that is modified at runtime.
  */
-
-#define	DEVICE_INIT_SECTIONS()			\
-		__device_init_start = .;	\
-		DEVICE_INIT_LEVEL(PRE_KERNEL_1)	\
-		DEVICE_INIT_LEVEL(PRE_KERNEL_2)	\
-		DEVICE_INIT_LEVEL(POST_KERNEL)	\
-		DEVICE_INIT_LEVEL(APPLICATION)	\
-		DEVICE_INIT_LEVEL(SMP)		\
-		__device_init_end = .;		\
-		DEVICE_BUSY_BITFIELD()		\
-
-
-/* define a section for undefined device initialization levels */
-#define DEVICE_INIT_UNDEFINED_SECTION()		\
-		KEEP(*(SORT(.init_[_A-Z0-9]*)))	\
+#define Z_ITERABLE_SECTION_RAM(struct_type, subalign) \
+	SECTION_DATA_PROLOGUE(struct_type##_area,,SUBALIGN(subalign)) \
+	{ \
+		Z_LINK_ITERABLE(struct_type); \
+	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
 
 /*
- * link in shell initialization objects for all modules that use shell and
- * their shell commands are automatically initialized by the kernel.
+ * generate a symbol to mark the start of the objects array for
+ * the specified object and level, then link all of those objects
+ * (sorted by priority). Ensure the objects aren't discarded if there is
+ * no direct reference to them
  */
-
-#define	SHELL_INIT_SECTIONS()				\
-		__shell_module_start = .;		\
-		KEEP(*(".shell_module_*"));		\
-		__shell_module_end = .;			\
-		__shell_cmd_start = .;			\
-		KEEP(*(".shell_cmd_*"));		\
-		__shell_cmd_end = .;			\
+#define CREATE_OBJ_LEVEL(object, level)				\
+		__##object##_##level##_start = .;		\
+		KEEP(*(SORT(.object##_##level[0-9]*)));		\
+		KEEP(*(SORT(.object##_##level[1-9][0-9]*)));
 
 /*
  * link in shell initialization objects for all modules that use shell and
@@ -96,26 +83,6 @@
  */
 
 #define APP_SMEM_SECTION() KEEP(*(SORT("data_smem_*")))
-
-#ifdef CONFIG_X86 /* LINKER FILES: defines used by linker script */
-/* Should be moved to linker-common-defs.h */
-#if defined(CONFIG_XIP)
-#define ROMABLE_REGION ROM
-#else
-#define ROMABLE_REGION RAM
-#endif
-#endif
-
-/*
- * If image is loaded via kexec Linux system call, then program
- * headers need to be page aligned.
- * This can be done by section page aligning.
- */
-#ifdef CONFIG_BOOTLOADER_KEXEC
-#define KEXEC_PGALIGN_PAD(x) . = ALIGN(x);
-#else
-#define KEXEC_PGALIGN_PAD(x)
-#endif
 
 #elif defined(_ASMLANGUAGE)
 
@@ -196,6 +163,10 @@ extern char _image_rodata_size[];
 extern char _vector_start[];
 extern char _vector_end[];
 
+#ifdef CONFIG_SW_VECTOR_RELAY
+extern char __vector_relay_table[];
+#endif
+
 #ifdef CONFIG_COVERAGE_GCOV
 extern char __gcov_bss_start[];
 extern char __gcov_bss_end[];
@@ -205,7 +176,7 @@ extern char __gcov_bss_size[];
 /* end address of image, used by newlib for the heap */
 extern char _end[];
 
-#ifdef DT_CCM_BASE_ADDRESS
+#if DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_ccm), okay)
 extern char __ccm_data_rom_start[];
 extern char __ccm_start[];
 extern char __ccm_data_start[];
@@ -215,9 +186,9 @@ extern char __ccm_bss_end[];
 extern char __ccm_noinit_start[];
 extern char __ccm_noinit_end[];
 extern char __ccm_end[];
-#endif /* DT_CCM_BASE_ADDRESS */
+#endif
 
-#ifdef DT_DTCM_BASE_ADDRESS
+#if DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay)
 extern char __dtcm_data_start[];
 extern char __dtcm_data_end[];
 extern char __dtcm_bss_start[];
@@ -227,7 +198,7 @@ extern char __dtcm_noinit_end[];
 extern char __dtcm_data_rom_start[];
 extern char __dtcm_start[];
 extern char __dtcm_end[];
-#endif /* DT_DTCM_BASE_ADDRESS */
+#endif
 
 /* Used by the Security Attribution Unit to configure the
  * Non-Secure Callable region.
@@ -274,6 +245,8 @@ extern char _ramfunc_rom_start[];
 #ifdef CONFIG_USERSPACE
 extern char z_priv_stacks_ram_start[];
 extern char z_priv_stacks_ram_end[];
+extern char z_user_stacks_start[];
+extern char z_user_stacks_end[];
 #endif /* CONFIG_USERSPACE */
 
 #endif /* ! _ASMLANGUAGE */

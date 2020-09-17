@@ -6,7 +6,6 @@
 menuconfig BT
 	bool "Bluetooth"
 	select NET_BUF
-	select LEGACY_TIMEOUT_API
 	help
 	  This option enables Bluetooth support.
 
@@ -49,13 +48,33 @@ config BT_HCI_RAW
 	  This option allows to access Bluetooth controller
 	  from the application with the RAW HCI protocol.
 
+config BT_HCI_RAW_H4
+	bool "RAW HCI H:4 transport"
+	help
+	  This option enables HCI RAW access to work over an H:4
+	  transport, note that it still need to be selected at runtime.
+
+config BT_HCI_RAW_H4_ENABLE
+	bool "RAW HCI H:4 transport enable"
+	depends on BT_HCI_RAW_H4
+	help
+	  This option enables use of H:4 transport for HCI RAW access at
+	  build time.
+
 config BT_HCI_RAW_RESERVE
 	int "Buffer headroom needed for HCI transport"
 	depends on BT_HCI_RAW
+	default 1 if BT_HCI_RAW_H4
 	default 0
 	help
 	  This option is used by the HCI raw transport implementation to
 	  declare how much headroom it needs for any HCI transport headers.
+
+config BT_HCI_RAW_CMD_EXT
+	bool "RAW HCI Command Extension"
+	help
+	  This option enables HCI RAW command extension so the driver can
+	  register it own command table extension.
 
 config BT_PERIPHERAL
 	bool "Peripheral Role support"
@@ -106,11 +125,37 @@ config BT_EXT_ADV_LEGACY_SUPPORT
 
 config BT_EXT_ADV_MAX_ADV_SET
 	int "Maximum number of simultaneous advertising sets"
-	range 1 1
+	range 1 64
 	default 1
 	help
 	  Maximum number of simultaneous Bluetooth advertising sets
 	  supported.
+
+config BT_PER_ADV
+	bool "Periodic Advertising and Scanning support [EXPERIMENTAL]"
+	help
+	  Select this to enable Periodic Advertising API support. This allows
+	  the device to send advertising data periodically at deterministic
+	  intervals. Scanners can synchronize to the periodic advertisements
+	  to periodically get the data.
+
+config BT_PER_ADV_SYNC
+	bool "Periodic advertising sync support [EXPERIMENTAL]"
+	depends on BT_OBSERVER
+	help
+	  Select this to enable Periodic Advertising Sync API support.
+	  Syncing with a periodic advertiser allows the device to periodically
+	  and deterministic receive data from that device in a connectionless
+	  manner.
+
+if BT_PER_ADV_SYNC
+config BT_PER_ADV_SYNC_MAX
+	int "Maximum number of simultaneous periodic advertising syncs"
+	range 1 64
+	default 1
+	help
+	  Maximum number of simultaneous periodic advertising syncs supported.
+endif # BT_PER_ADV_SYNC
 
 endif # BT_EXT_ADV
 

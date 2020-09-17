@@ -23,6 +23,7 @@
 extern "C" {
 #endif
 
+const char *ztest_relative_filename(const char *file);
 void ztest_test_fail(void);
 #if CONFIG_ZTEST_ASSERT_VERBOSE == 0
 
@@ -30,7 +31,7 @@ static inline void z_zassert_(bool cond, const char *file, int line)
 {
 	if (cond == false) {
 		PRINT("\n    Assertion failed at %s:%d\n",
-		      file, line);
+		      ztest_relative_filename(file), line);
 		ztest_test_fail();
 	}
 }
@@ -51,7 +52,7 @@ static inline void z_zassert(bool cond,
 
 		va_start(vargs, msg);
 		PRINT("\n    Assertion failed at %s:%d: %s: %s\n",
-		      file, line, func, default_msg);
+		      ztest_relative_filename(file), line, func, default_msg);
 		vprintk(msg, vargs);
 		printk("\n");
 		va_end(vargs);
@@ -60,7 +61,7 @@ static inline void z_zassert(bool cond,
 #if CONFIG_ZTEST_ASSERT_VERBOSE == 2
 	else {
 		PRINT("\n   Assertion succeeded at %s:%d (%s)\n",
-		      file, line, func);
+		      ztest_relative_filename(file), line, func);
 	}
 #endif
 }
@@ -113,6 +114,14 @@ static inline void z_zassert(bool cond,
  * @param msg Optional message to print if the assertion fails
  */
 #define zassert_false(cond, msg, ...) zassert(!(cond), #cond " is true", \
+					      msg, ##__VA_ARGS__)
+
+/**
+ * @brief Assert that @a cond is 0 (success)
+ * @param cond Condition to check
+ * @param msg Optional message to print if the assertion fails
+ */
+#define zassert_ok(cond, msg, ...) zassert(!(cond), #cond " is non-zero", \
 					      msg, ##__VA_ARGS__)
 
 /**

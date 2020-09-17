@@ -9,5 +9,4 @@ set(QEMU_FLAGS_${ARCH}
   -nographic
   -machine sifive_e
   )
-
 board_set_debugger_ifnset(qemu)

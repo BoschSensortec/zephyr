@@ -21,7 +21,7 @@ FS_LITTLEFS_DECLARE_DEFAULT_CONFIG(cstorage);
 static struct fs_mount_t mnt = {
 	.type = FS_LITTLEFS,
 	.fs_data = &cstorage,
-	.storage_dev = (void *)DT_FLASH_AREA_STORAGE_ID,
+	.storage_dev = (void *)FLASH_AREA_ID(storage),
 	.mnt_point = "/mnt"
 };
 
@@ -91,7 +91,7 @@ void setup_fs(void)
 		return;
 	}
 
-	ret = fs_open(&img, IMG_FILE_PATH);
+	ret = fs_open(&img, IMG_FILE_PATH, FS_O_CREATE | FS_O_WRITE);
 	if (ret < 0) {
 		TC_PRINT("Failed to open image file: %d\n", ret);
 		ztest_test_fail();

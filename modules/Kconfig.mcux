@@ -104,6 +104,12 @@ config HAS_MCUX_GPT
 	help
 	  Set if the general purpose timer (GPT) module is present in the SoC.
 
+config HAS_MCUX_RNG
+	bool
+	help
+	  Set if the LPC specific random number generator (RNG) module is
+	  present in the SoC.
+
 config HAS_MCUX_RNGA
 	bool
 	help
@@ -153,6 +159,11 @@ config HAS_MCUX_WDOG32
 	help
 	  Set if the watchdog (WDOG32) module is present in the SoC.
 
+config HAS_MCUX_WWDT
+	bool
+	help
+	  Set if the watchdog (WWDT) module is present in the SoC.
+
 config HAS_MCUX_PWM
 	bool
 	help
@@ -172,5 +183,40 @@ config HAS_MCUX_LPTMR
 	bool
 	help
 	  Set if the Low Power Timer (LPTMR) module is present in the SoC.
+
+config HAS_MCUX_DAC
+	bool
+	help
+	  Set if the Digital-to-Analog (DAC) module is present in the SoC.
+
+config HAS_MCUX_DAC32
+	bool
+	help
+	  Set if the Digital-to-Analog (DAC32) module is present in the SoC.
+
+config HAS_MCUX_TPM
+	bool
+	help
+	  Set if the Timer/PWM Module is present in the SoC
+
+config HAS_MCUX_EDMA
+	bool
+	help
+	  Set if the EDMA module is present on the SoC.
+
+config HAS_MCUX_LPC_DMA
+	bool
+	help
+	  Set if the DMA module is present on the SoC.
+
+config HAS_MCUX_RDC
+	bool
+	help
+	  Set if the RDC module is present in the SoC.
+
+config HAS_MCUX_PIT
+	bool
+	help
+	  Set if the PIT module is present on the SoC.
 
 endif # HAS_MCUX

@@ -10,11 +10,13 @@ ram: 32
 supported:
   - adc
   - ble
+  - counter
+  - gpio
+  - i2c
   - nvs
   - pwm
   - spi
   - watchdog
-  - counter
 testing:
   ignore_tags:
     - net

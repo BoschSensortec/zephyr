@@ -9,7 +9,9 @@ toolchain:
 ram: 192
 flash: 256
 supported:
+  - adc
   - arduino_gpio
+  - counter
   - gpio
   - i2c
   - nvs

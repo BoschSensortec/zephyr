@@ -6,6 +6,10 @@
 #include "gpio_gecko.h"
 
 / {
+	chosen {
+		zephyr,flash-controller = &msc;
+	};
+
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -21,7 +25,7 @@
 	};
 
 	soc {
-		flash-controller@400e0000 {
+		msc: flash-controller@400e0000 {
 			compatible = "silabs,gecko-flash-controller";
 			label = "FLASH_CTRL";
 			reg = <0x400e0000 0x78>;
@@ -163,6 +167,7 @@
 		wdog0: wdog@40052000 {
 			compatible = "silabs,gecko-wdog";
 			reg = <0x40052000 0x2C>;
+			peripheral-id = <0>;
 			label = "WDOG0";
 			interrupts = <2 0>;
 			status = "disabled";

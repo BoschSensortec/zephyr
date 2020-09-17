@@ -9,6 +9,62 @@
 #include <linker/sections.h>
 #include <offsets_short.h>
 #include <arch/cpu.h>
+#include <sys/util.h>
+#include <kernel.h>
+
+/* Convenience macros for loading/storing register states. */
+
+#define DO_FP_CALLER_SAVED(op, reg) \
+	op ft0, __z_arch_esf_t_ft0_OFFSET(reg)	 ;\
+	op ft1, __z_arch_esf_t_ft1_OFFSET(reg)	 ;\
+	op ft2, __z_arch_esf_t_ft2_OFFSET(reg)	 ;\
+	op ft3, __z_arch_esf_t_ft3_OFFSET(reg)	 ;\
+	op ft4, __z_arch_esf_t_ft4_OFFSET(reg)	 ;\
+	op ft5, __z_arch_esf_t_ft5_OFFSET(reg)	 ;\
+	op ft6, __z_arch_esf_t_ft6_OFFSET(reg)	 ;\
+	op ft7, __z_arch_esf_t_ft7_OFFSET(reg)	 ;\
+	op ft8, __z_arch_esf_t_ft8_OFFSET(reg)	 ;\
+	op ft9, __z_arch_esf_t_ft9_OFFSET(reg)	 ;\
+	op ft10, __z_arch_esf_t_ft10_OFFSET(reg) ;\
+	op ft11, __z_arch_esf_t_ft11_OFFSET(reg) ;\
+	op fa0, __z_arch_esf_t_fa0_OFFSET(reg)	 ;\
+	op fa1, __z_arch_esf_t_fa1_OFFSET(reg)	 ;\
+	op fa2, __z_arch_esf_t_fa2_OFFSET(reg)	 ;\
+	op fa3, __z_arch_esf_t_fa3_OFFSET(reg)	 ;\
+	op fa4, __z_arch_esf_t_fa4_OFFSET(reg)	 ;\
+	op fa5, __z_arch_esf_t_fa5_OFFSET(reg)	 ;\
+	op fa6, __z_arch_esf_t_fa6_OFFSET(reg)	 ;\
+	op fa7, __z_arch_esf_t_fa7_OFFSET(reg)	 ;
+
+#define STORE_FP_CALLER_SAVED(reg) \
+	DO_FP_CALLER_SAVED(RV_OP_STOREFPREG, reg)
+
+#define LOAD_FP_CALLER_SAVED(reg) \
+	DO_FP_CALLER_SAVED(RV_OP_LOADFPREG, reg)
+
+#define DO_FP_CALLEE_SAVED(op, reg) \
+	op fs0, _thread_offset_to_fs0(reg)   ;\
+	op fs1, _thread_offset_to_fs1(reg)   ;\
+	op fs2, _thread_offset_to_fs2(reg)   ;\
+	op fs3, _thread_offset_to_fs3(reg)   ;\
+	op fs4, _thread_offset_to_fs4(reg)   ;\
+	op fs5, _thread_offset_to_fs5(reg)   ;\
+	op fs6, _thread_offset_to_fs6(reg)   ;\
+	op fs7, _thread_offset_to_fs7(reg)   ;\
+	op fs8, _thread_offset_to_fs8(reg)   ;\
+	op fs9, _thread_offset_to_fs9(reg)   ;\
+	op fs10, _thread_offset_to_fs10(reg) ;\
+	op fs11, _thread_offset_to_fs11(reg) ;
+
+#define STORE_FP_CALLEE_SAVED(reg) \
+	frcsr t2				       ;\
+	RV_OP_STOREREG t2, _thread_offset_to_fcsr(reg) ;\
+	DO_FP_CALLEE_SAVED(RV_OP_STOREFPREG, reg)
+
+#define LOAD_FP_CALLEE_SAVED(reg) \
+	RV_OP_LOADREG t2, _thread_offset_to_fcsr(reg) ;\
+	fscsr x0, t2				      ;\
+	DO_FP_CALLEE_SAVED(RV_OP_LOADFPREG, reg)
 
 /* imports */
 GDATA(_sw_isr_table)
@@ -68,12 +124,7 @@ SECTION_FUNC(exception.entry, __irq_wrapper)
 	/* Allocate space on thread stack to save registers */
 	addi sp, sp, -__z_arch_esf_t_SIZEOF
 
-	/*
-	 * Save caller-saved registers on current thread stack.
-	 * NOTE: need to be updated to account for floating-point registers
-	 * floating-point registers should be accounted for when corresponding
-	 * config variable is set
-	 */
+	/* Save caller-saved registers on current thread stack. */
 	RV_OP_STOREREG ra, __z_arch_esf_t_ra_OFFSET(sp)
 	RV_OP_STOREREG gp, __z_arch_esf_t_gp_OFFSET(sp)
 	RV_OP_STOREREG tp, __z_arch_esf_t_tp_OFFSET(sp)
@@ -93,6 +144,19 @@ SECTION_FUNC(exception.entry, __irq_wrapper)
 	RV_OP_STOREREG a6, __z_arch_esf_t_a6_OFFSET(sp)
 	RV_OP_STOREREG a7, __z_arch_esf_t_a7_OFFSET(sp)
 
+#if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
+	/* Assess whether floating-point registers need to be saved. */
+	la t0, _kernel
+	RV_OP_LOADREG t0, _kernel_offset_to_current(t0)
+	RV_OP_LOADREG t0, _thread_offset_to_user_options(t0)
+	andi t0, t0, K_FP_REGS
+	RV_OP_STOREREG t0, __z_arch_esf_t_fp_state_OFFSET(sp)
+	beqz t0, skip_store_fp_caller_saved
+	STORE_FP_CALLER_SAVED(sp)
+
+skip_store_fp_caller_saved:
+#endif
+
 	/* Save MEPC register */
 	csrr t0, mepc
 	RV_OP_STOREREG t0, __z_arch_esf_t_mepc_OFFSET(sp)
@@ -106,10 +170,6 @@ SECTION_FUNC(exception.entry, __irq_wrapper)
 	addi a0, sp, __z_arch_esf_t_soc_context_OFFSET
 	jal ra, __soc_save_context
 #endif /* CONFIG_RISCV_SOC_CONTEXT_SAVE */
-
-#ifdef CONFIG_EXECUTION_BENCHMARKING
-	call read_timer_start_of_isr
-#endif
 
 	/*
 	 * Check if exception is the result of an interrupt or not.
@@ -206,7 +266,7 @@ is_interrupt:
 	RV_OP_STOREREG t0, 0x00(sp)
 
 on_irq_stack:
-	/* Increment _kernel.nested variable */
+	/* Increment _kernel.cpus[0].nested variable */
 	lw t3, _kernel_offset_to_nested(t2)
 	addi t3, t3, 1
 	sw t3, _kernel_offset_to_nested(t2)
@@ -257,15 +317,6 @@ call_irq:
 	/* Load ISR function address in register t1 */
 	RV_OP_LOADREG t1, RV_REGSIZE(t0)
 
-#ifdef CONFIG_EXECUTION_BENCHMARKING
-	addi sp, sp, -16
-	RV_OP_STOREREG a0, 0x00(sp)
-	RV_OP_STOREREG t1, RV_REGSIZE(sp)
-	call read_timer_end_of_isr
-	RV_OP_LOADREG t1, RV_REGSIZE(sp)
-	RV_OP_LOADREG a0, 0x00(sp)
-	addi sp, sp, 16
-#endif
 	/* Call ISR function */
 	jalr ra, t1
 
@@ -273,7 +324,7 @@ on_thread_stack:
 	/* Get reference to _kernel */
 	la t1, _kernel
 
-	/* Decrement _kernel.nested variable */
+	/* Decrement _kernel.cpus[0].nested variable */
 	lw t2, _kernel_offset_to_nested(t1)
 	addi t2, t2, -1
 	sw t2, _kernel_offset_to_nested(t1)
@@ -307,7 +358,7 @@ on_thread_stack:
 
 reschedule:
 #if CONFIG_TRACING
-	call sys_trace_thread_switched_in
+	call sys_trace_thread_switched_out
 #endif
 	/* Get reference to _kernel */
 	la t0, _kernel
@@ -331,6 +382,16 @@ reschedule:
 	RV_OP_STOREREG s9, _thread_offset_to_s9(t1)
 	RV_OP_STOREREG s10, _thread_offset_to_s10(t1)
 	RV_OP_STOREREG s11, _thread_offset_to_s11(t1)
+
+#if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
+	/* Assess whether floating-point registers need to be saved. */
+	RV_OP_LOADREG t2, _thread_offset_to_user_options(t1)
+	andi t2, t2, K_FP_REGS
+	beqz t2, skip_store_fp_callee_saved
+	STORE_FP_CALLEE_SAVED(t1)
+
+skip_store_fp_callee_saved:
+#endif
 
 	/*
 	 * Save stack pointer of current thread and set the default return value
@@ -366,51 +427,28 @@ reschedule:
 	RV_OP_LOADREG s10, _thread_offset_to_s10(t1)
 	RV_OP_LOADREG s11, _thread_offset_to_s11(t1)
 
-#ifdef CONFIG_EXECUTION_BENCHMARKING
-	addi sp, sp, -__z_arch_esf_t_SIZEOF
+#if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
+	/* Determine if we need to restore floating-point registers. */
+	RV_OP_LOADREG t2, _thread_offset_to_user_options(t1)
+	andi t2, t2, K_FP_REGS
+	beqz t2, skip_load_fp_callee_saved
 
-	RV_OP_STOREREG ra, __z_arch_esf_t_ra_OFFSET(sp)
-	RV_OP_STOREREG gp, __z_arch_esf_t_gp_OFFSET(sp)
-	RV_OP_STOREREG tp, __z_arch_esf_t_tp_OFFSET(sp)
-	RV_OP_STOREREG t0, __z_arch_esf_t_t0_OFFSET(sp)
-	RV_OP_STOREREG t1, __z_arch_esf_t_t1_OFFSET(sp)
-	RV_OP_STOREREG t2, __z_arch_esf_t_t2_OFFSET(sp)
-	RV_OP_STOREREG t3, __z_arch_esf_t_t3_OFFSET(sp)
-	RV_OP_STOREREG t4, __z_arch_esf_t_t4_OFFSET(sp)
-	RV_OP_STOREREG t5, __z_arch_esf_t_t5_OFFSET(sp)
-	RV_OP_STOREREG t6, __z_arch_esf_t_t6_OFFSET(sp)
-	RV_OP_STOREREG a0, __z_arch_esf_t_a0_OFFSET(sp)
-	RV_OP_STOREREG a1, __z_arch_esf_t_a1_OFFSET(sp)
-	RV_OP_STOREREG a2, __z_arch_esf_t_a2_OFFSET(sp)
-	RV_OP_STOREREG a3, __z_arch_esf_t_a3_OFFSET(sp)
-	RV_OP_STOREREG a4, __z_arch_esf_t_a4_OFFSET(sp)
-	RV_OP_STOREREG a5, __z_arch_esf_t_a5_OFFSET(sp)
-	RV_OP_STOREREG a6, __z_arch_esf_t_a6_OFFSET(sp)
-	RV_OP_STOREREG a7, __z_arch_esf_t_a7_OFFSET(sp)
+	/*
+	 * If we are switching from a thread with floating-point disabled the
+	 * mstatus FS bits will still be cleared, which can cause an illegal
+	 * instruction fault. Set the FS state before restoring the registers.
+	 * mstatus will be restored later on.
+	 */
+	li t2, MSTATUS_FS_INIT
+	csrrs x0, mstatus, t2
 
-	call read_timer_end_of_swap
+	LOAD_FP_CALLEE_SAVED(t1)
 
-	RV_OP_LOADREG ra, __z_arch_esf_t_ra_OFFSET(sp)
-	RV_OP_LOADREG gp, __z_arch_esf_t_gp_OFFSET(sp)
-	RV_OP_LOADREG tp, __z_arch_esf_t_tp_OFFSET(sp)
-	RV_OP_LOADREG t0, __z_arch_esf_t_t0_OFFSET(sp)
-	RV_OP_LOADREG t1, __z_arch_esf_t_t1_OFFSET(sp)
-	RV_OP_LOADREG t2, __z_arch_esf_t_t2_OFFSET(sp)
-	RV_OP_LOADREG t3, __z_arch_esf_t_t3_OFFSET(sp)
-	RV_OP_LOADREG t4, __z_arch_esf_t_t4_OFFSET(sp)
-	RV_OP_LOADREG t5, __z_arch_esf_t_t5_OFFSET(sp)
-	RV_OP_LOADREG t6, __z_arch_esf_t_t6_OFFSET(sp)
-	RV_OP_LOADREG a0, __z_arch_esf_t_a0_OFFSET(sp)
-	RV_OP_LOADREG a1, __z_arch_esf_t_a1_OFFSET(sp)
-	RV_OP_LOADREG a2, __z_arch_esf_t_a2_OFFSET(sp)
-	RV_OP_LOADREG a3, __z_arch_esf_t_a3_OFFSET(sp)
-	RV_OP_LOADREG a4, __z_arch_esf_t_a4_OFFSET(sp)
-	RV_OP_LOADREG a5, __z_arch_esf_t_a5_OFFSET(sp)
-	RV_OP_LOADREG a6, __z_arch_esf_t_a6_OFFSET(sp)
-	RV_OP_LOADREG a7, __z_arch_esf_t_a7_OFFSET(sp)
+skip_load_fp_callee_saved:
+#endif
 
-	/* Release stack space */
-	addi sp, sp, __z_arch_esf_t_SIZEOF
+#if CONFIG_TRACING
+	call sys_trace_thread_switched_in
 #endif
 
 no_reschedule:
@@ -427,6 +465,19 @@ no_reschedule:
 	/* Restore SOC-specific MSTATUS register */
 	RV_OP_LOADREG t0, __z_arch_esf_t_mstatus_OFFSET(sp)
 	csrw mstatus, t0
+
+#if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
+	/*
+	 * Determine if we need to restore floating-point registers. This needs
+	 * to happen before restoring integer registers to avoid stomping on
+	 * t0.
+	 */
+	RV_OP_LOADREG t0, __z_arch_esf_t_fp_state_OFFSET(sp)
+	beqz t0, skip_load_fp_caller_saved
+	LOAD_FP_CALLER_SAVED(sp)
+
+skip_load_fp_caller_saved:
+#endif
 
 	/* Restore caller-saved registers from thread stack */
 	RV_OP_LOADREG ra, __z_arch_esf_t_ra_OFFSET(sp)

@@ -19,14 +19,13 @@
 	};
 
 	chosen {
-		zephyr,console = &uart1;
-		zephyr,shell-uart = &uart1;
+		zephyr,console = &lpuart1;
+		zephyr,shell-uart = &lpuart1;
 	};
 
 	sdram0: memory@80000000 {
 		/* Micron MT48LC16M16A2B4-6AIT:G */
 		device_type = "memory";
-		compatible = "mmio-sram";
 		reg = <0x80000000 0x2000000>;
 	};
 
@@ -50,7 +49,7 @@
 };
 
 
-&flexspi0 {
+&flexspi {
 	reg = <0x402a8000 0x4000>, <0x60000000 0x800000>;
 	is25wp064: is25wp064@0 {
 		compatible = "issi,is25wp064", "jedec,spi-nor";
@@ -63,17 +62,16 @@
 	};
 };
 
-&uart1 {
+&lpuart1 {
 	status = "okay";
 	current-speed = <115200>;
 };
 
-&usbd1 {
+&usb1 {
 	status = "okay";
 };
 
 &usdhc1 {
 	status = "okay";
-	pwr-gpios = <&gpio1 5 0>;
-	cd-gpios = <&gpio2 28 0>;
+	cd-gpios = <&gpio2 28 GPIO_ACTIVE_LOW>;
 };

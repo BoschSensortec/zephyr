@@ -75,7 +75,6 @@ config MODEM_IFACE_UART
 config MODEM_CMD_HANDLER
 	bool "Generic modem command handler"
 	select NET_BUF
-	select LEGACY_TIMEOUT_API
 	help
 	  This generic command handler uses a modem interface to process
 	  incoming data and hand it back to the modem driver via callbacks
@@ -125,8 +124,19 @@ config MODEM_SHELL
 	  Activate shell module that provides modem utilities like
 	  sending a command to the modem UART.
 
+config MODEM_SIM_NUMBERS
+	bool "Enable querying the SIM for IMSI and ICCID"
+	depends on MODEM_SHELL
+	default y
+	help
+	  Query the SIM card for the IMSI and ICCID identifiers. This
+	  can be disabled if the application does not use a SIM.
+
+
 source "drivers/modem/Kconfig.ublox-sara-r4"
 source "drivers/modem/Kconfig.wncm14a2a"
 source "drivers/modem/Kconfig.gsm"
+
+source "drivers/modem/Kconfig.hl7800"
 
 endif # MODEM

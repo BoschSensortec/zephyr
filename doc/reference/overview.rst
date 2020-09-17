@@ -27,7 +27,7 @@ current :ref:`stability level <api_lifecycle>`.
    * - :ref:`bluetooth_api`
      - Stable
      - 1.0
-     - 2.2
+     - 2.3
 
    * - :ref:`can_api`
      - Experimental
@@ -42,12 +42,12 @@ current :ref:`stability level <api_lifecycle>`.
    * - :ref:`device_model_api`
      - Stable
      - 1.0
-     - 2.2
+     - 2.3
 
    * - :ref:`devicetree_api`
      - Experimental
      - 2.2
-     - 2.2
+     - 2.3
 
    * - :ref:`display_api`
      - Unstable
@@ -62,7 +62,7 @@ current :ref:`stability level <api_lifecycle>`.
    * - :ref:`kernel_api`
      - Stable
      - 1.0
-     - 2.2
+     - 2.3
 
    * - :ref:`logging_api`
      - Stable
@@ -77,7 +77,7 @@ current :ref:`stability level <api_lifecycle>`.
    * - :ref:`networking_api`
      - Stable
      - 1.0
-     - 2.2
+     - 2.3
 
    * - :ref:`adc_api`
      - Stable
@@ -99,8 +99,13 @@ current :ref:`stability level <api_lifecycle>`.
      - 1.5
      - 2.0
 
-   * - :ref:`eeprom_api`
+   * - :ref:`dac_api`
      - Experimental
+     - 2.3
+     - 2.3
+
+   * - :ref:`eeprom_api`
+     - Unstable
      - 2.1
      - 2.1
 
@@ -127,12 +132,7 @@ current :ref:`stability level <api_lifecycle>`.
    * - :ref:`hwinfo_api`
      - Stable
      - 1.14
-     - 1.14
-
-   * - :ref:`i2c_eeprom_slave_api`
-     - Stable
-     - 1.13
-     - 1.13
+     - 2.3
 
    * - :ref:`i2c_api`
      - Stable
@@ -159,6 +159,11 @@ current :ref:`stability level <api_lifecycle>`.
      - 2.1
      - 2.2
 
+   * - :ref:`peci_api`
+     - Stable
+     - 2.1
+     - 2.2
+
    * - :ref:`pinmux_api`
      - Stable
      - 1.0
@@ -177,7 +182,7 @@ current :ref:`stability level <api_lifecycle>`.
    * - :ref:`sensor_api`
      - Stable
      - 1.2
-     - 2.0
+     - 2.3
 
    * - :ref:`spi_api`
      - Stable
@@ -222,7 +227,7 @@ current :ref:`stability level <api_lifecycle>`.
    * - :ref:`shell_api`
      - Stable
      - 1.14
-     - 2.2
+     - 2.3
 
    * - :ref:`disk_access_api`
      - Stable
@@ -239,10 +244,15 @@ current :ref:`stability level <api_lifecycle>`.
      - 1.11
      - 2.1
 
+   * - :ref:`stream_flash`
+     - Experimental
+     - 2.3
+     - 2.3
+
    * - :ref:`flash_map_api`
      - Stable
      - 1.11
-     - 2.0
+     - 2.3
 
    * - :ref:`nvs_api`
      - Stable
@@ -252,9 +262,14 @@ current :ref:`stability level <api_lifecycle>`.
    * - :ref:`usb_api`
      - Stable
      - 1.5
-     - 2.2
+     - 2.3
 
    * - :ref:`usermode_api`
      - Stable
      - 1.11
      - 1.11
+
+   * - :ref:`util_api`
+     - Experimental
+     - 2.4
+     - 2.4

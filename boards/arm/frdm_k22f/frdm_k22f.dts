@@ -107,8 +107,10 @@ arduino_spi: &spi0 {
 	status = "okay";
 };
 
-&pwm3 {
+&ftm3 {
 	status = "okay";
+	compatible = "nxp,kinetis-ftm-pwm";
+	#pwm-cells = <3>;
 };
 
 &uart1 {
@@ -116,16 +118,36 @@ arduino_spi: &spi0 {
 	current-speed = <115200>;
 };
 
-&usbd {
+&usbotg {
 	compatible = "nxp,kinetis-usbd";
 	status = "okay";
 	num-bidir-endpoints = <8>;
 };
 
+&gpioa {
+	status = "okay";
+};
+
+&gpiob {
+	status = "okay";
+};
+
+&gpioc {
+	status = "okay";
+};
+
+&gpiod {
+	status = "okay";
+};
+
+&gpioe {
+	status = "okay";
+};
+
 &flash0 {
 	/*
 	 * For more information, see:
-	 * http://docs.zephyrproject.org/latest/devices/dts/flash_partitions.html
+	 * https://docs.zephyrproject.org/latest/reference/devicetree/index.html#fixed-flash-partitions
 	 */
 	partitions {
 		compatible = "fixed-partitions";

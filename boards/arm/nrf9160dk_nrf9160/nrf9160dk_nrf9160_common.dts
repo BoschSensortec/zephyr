@@ -6,8 +6,7 @@
 
 / {
 	model = "Nordic nRF9160 DK NRF9160";
-	compatible = "nordic,nrf9160-dk-nrf9160", "nordic,nrf9160-sica",
-		     "nordic,nrf9160";
+	compatible = "nordic,nrf9160-dk-nrf9160";
 
 	chosen {
 		zephyr,console = &uart0;
@@ -146,7 +145,7 @@
 &flash0 {
 	/*
 	 * For more information, see:
-	 * http://docs.zephyrproject.org/latest/guides/dts/index.html#flash-partitions
+	 * https://docs.zephyrproject.org/latest/guides/dts/legacy-macros.html#legacy-flash-partitions
 	 */
 	partitions {
 		compatible = "fixed-partitions";
@@ -155,15 +154,15 @@
 
 		boot_partition: partition@0 {
 			label = "mcuboot";
-			reg = <0x00000000 0x10000>;
+			reg = <0x00000000 0xc000>;
 		};
-		slot0_partition: partition@10000 {
+		slot0_partition: partition@c000 {
 			label = "image-0";
 		};
-		slot0_ns_partition: partition@40000 {
+		slot0_ns_partition: partition@3e000 {
 			label = "image-0-nonsecure";
 		};
-		slot1_partition: partition@80000 {
+		slot1_partition: partition@7e000 {
 			label = "image-1";
 		};
 		slot1_ns_partition: partition@b0000 {
@@ -181,14 +180,23 @@
 };
 
 / {
-	/* SRAM allocated and used by the BSD library */
-	sram0_bsd: memory@20010000 {
-		compatible = "mmio-sram";
-	};
 
-	/* SRAM allocated to the Non-Secure image */
-	sram0_ns: memory@20020000 {
-		compatible = "mmio-sram";
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		sram0_s: image_s@20000000 {
+			/* Secure image memory */
+		};
+
+		sram0_bsd: image_bsd@20010000 {
+			/* BSD (shared) memory */
+		};
+
+		sram0_ns: image_ns@20020000 {
+			/* Non-Secure image memory */
+		};
 	};
 };
 

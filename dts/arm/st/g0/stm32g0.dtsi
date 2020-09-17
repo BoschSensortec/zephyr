@@ -11,8 +11,13 @@
 #include <dt-bindings/clock/stm32_clock.h>
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/i2c/i2c.h>
+#include <dt-bindings/pwm/pwm.h>
 
 / {
+	chosen {
+		zephyr,flash-controller = &flash;
+	};
+
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -29,8 +34,8 @@
 	};
 
 	soc {
-		flash-controller@40022000 {
-			compatible = "st,stm32g0-flash-controller";
+		flash: flash-controller@40022000 {
+			compatible = "st,stm32-flash-controller", "st,stm32g0-flash-controller";
 			label = "FLASH_CTRL";
 			reg = <0x40022000 0x400>;
 			interrupts = <3 0>;
@@ -154,6 +159,8 @@
 			compatible = "st,stm32-timers";
 			reg = <0x40000400 0x400>;
 			clocks = <&rcc STM32_CLOCK_BUS_APB1 0x00000002>;
+			interrupts = <16 0>;
+			interrupt-names = "global";
 			status = "disabled";
 			label = "TIMERS_3";
 
@@ -162,7 +169,7 @@
 				status = "disabled";
 				st,prescaler = <10000>;
 				label = "PWM_3";
-				#pwm-cells = <2>;
+				#pwm-cells = <3>;
 			};
 		};
 

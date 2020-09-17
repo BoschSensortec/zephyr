@@ -15,11 +15,12 @@ on the current thread state, and other behavioral characteristics.
    if a parameter to the function can prevent the invoking thread from
    trying to sleep
 :ref:`api_term_isr-ok`
-   if the function can always be safely called from interrupt context
-   even if it may return an error in that case
+   if the function can be safely called and will have its specified
+   effect whether invoked from interrupt or thread context
 :ref:`api_term_pre-kernel-ok`
    if the function can be safely called before the kernel has been fully
-   initialized, even if it may return an error in that case
+   initialized and will have its specified effect when invoked from that
+   context.
 :ref:`api_term_async`
    if the function may return before the operation it initializes is
    complete (i.e. function return and operation completion are
@@ -79,7 +80,7 @@ sleep.
 
 This attribute does not imply the function will sleep unconditionally,
 but that the operation may require an invoking thread that would have to
-suspend, wait, or invoke :cpp:func:`k_yield()` before it can complete
+suspend, wait, or invoke :c:func:`k_yield` before it can complete
 its operation.  This behavior may be mediated by **no-wait**.
 
 Functions that are **sleep** are implicitly **reschedule**.
@@ -108,7 +109,7 @@ long as it can be completed immediately, and to return an error code
 rather than sleep if it cannot.
 
 It is use of the no-wait feature that allows functions like
-:cpp:func:`k_sem_take` to be invoked from ISRs, since it is not
+:c:func:`k_sem_take` to be invoked from ISRs, since it is not
 permitted to sleep in interrupt context.
 
 A function with a no-wait path does not imply that taking that path
@@ -122,22 +123,23 @@ pre-kernel contexts only when the parameter selects the no-wait path.
 isr-ok
 ======
 
-The isr-ok attribute is used on a function to indicate that it can be
-called from interrupt context.  If necessary the function will use
-:cpp:func:`k_is_in_isr` to detect its calling context and force an
-execution path that will not cause the invoking thread to sleep.
+The isr-ok attribute is used on a function to indicate that it works
+whether it is being invoked from interrupt or thread context.
 
 Explanation
 -----------
 
-This attribute is intended for **sleep** functions that may be
-indirectly invoked from interrupt context with arguments that could
-attempt to put the invoking thread to sleep, e.g. because the function
-is not **no-wait** or the parameters do not select the no-wait path.
+Any function that is not **sleep** is inherently **isr-ok**.  Functions
+that are **sleep** are **isr-ok** if the implementation ensures that the
+documented behavior is implemented even if called from an interrupt
+context.  This may be achieved by having the implementation detect the
+calling context and transfer the operation that would sleep to a thread,
+or by documenting that when invoked from a non-thread context the
+function will return a specific error (generally ``-EWOULDBLOCK``).
 
-Functions that are **isr-ok** may be always be safely invoked from
-interrupt context, and will return an error if they were unable to
-fulfill their behavior in that context.
+Note that a function that is **no-wait** is safe to call from interrupt
+context only when the no-wait path is selected.  **isr-ok** functions
+need not provide a no-wait path.
 
 .. _api_term_pre-kernel-ok:
 
@@ -145,22 +147,21 @@ pre-kernel-ok
 =============
 
 The pre-kernel-ok attribute is used on a function to indicate that it
-will take reasonable steps to ensure it is safe to invoke before all
-kernel services are started. In some cases the invocation in that
-context may return an error code.
+works as documented even when invoked before the kernel main thread has
+been started.
 
 Explanation
 -----------
 
 This attribute is similar to **isr-ok** in function, but is intended for
-use by any API that is expected to be called in :c:func:`DEVICE_INIT()`
-or :c:func:`SYS_INIT()` calls that may be invoked with ``PRE_KERNEL_1``
+use by any API that is expected to be called in :c:macro:`DEVICE_INIT()`
+or :c:macro:`SYS_INIT()` calls that may be invoked with ``PRE_KERNEL_1``
 or ``PRE_KERNEL_2`` initialization levels.
 
 Generally a function that is **pre-kernel-ok** checks
-:cpp:func:`k_is_pre_kernel` when determining whether it can fulfill its
+:c:func:`k_is_pre_kernel` when determining whether it can fulfill its
 required behavior.  In many cases it would also check
-:cpp:func:`k_is_in_isr` so it can be **isr-ok** as well.
+:c:func:`k_is_in_isr` so it can be **isr-ok** as well.
 
 .. _api_term_async:
 
@@ -183,7 +184,7 @@ Explanation
 Be aware that **async** is orthogonal to context-switching.  Some APIs
 may provide completion information through a callback, but may suspend
 while waiting for the resource necessary to initiate the operation; an
-example is :cpp:func:`spi_transceive_async`.
+example is :c:func:`spi_transceive_async`.
 
 If a function is both **no-wait** and **async** then selecting the
 no-wait path only guarantees that the function will not sleep.  It does

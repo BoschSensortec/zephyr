@@ -5,7 +5,10 @@ set_ifndef(C++ g++)
 # Configures CMake for using GCC, this script is re-used by several
 # GCC-based toolchains
 
-find_program(CMAKE_C_COMPILER ${CROSS_COMPILE}${CC} PATH ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
+find_program(CMAKE_C_COMPILER ${CROSS_COMPILE}${CC} PATHS ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
+if(${CMAKE_C_COMPILER} STREQUAL CMAKE_C_COMPILER-NOTFOUND)
+  message(FATAL_ERROR "C compiler ${CROSS_COMPILE}${CC} not found - Please check your toolchain installation")
+endif()
 
 if(CONFIG_CPLUSPLUS)
   set(cplusplus_compiler ${CROSS_COMPILE}${C++})
@@ -19,7 +22,7 @@ else()
     set(cplusplus_compiler ${CMAKE_C_COMPILER})
   endif()
 endif()
-find_program(CMAKE_CXX_COMPILER ${cplusplus_compiler} PATH ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
+find_program(CMAKE_CXX_COMPILER ${cplusplus_compiler} PATHS ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
 
 set(NOSTDINC "")
 
@@ -110,17 +113,3 @@ list(APPEND CMAKE_REQUIRED_FLAGS
   -Wl,--entry=0 # Set an entry point to avoid a warning
   )
 string(REPLACE ";" " " CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS}")
-
-# Load toolchain_cc-family macros
-include(${ZEPHYR_BASE}/cmake/compiler/${COMPILER}/target_freestanding.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/${COMPILER}/target_security_fortify.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/${COMPILER}/target_security_canaries.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/${COMPILER}/target_optimizations.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/${COMPILER}/target_cpp.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/${COMPILER}/target_asm.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/${COMPILER}/target_baremetal.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/${COMPILER}/target_warnings.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/${COMPILER}/target_imacros.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/${COMPILER}/target_base.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/${COMPILER}/target_coverage.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/${COMPILER}/target_sanitizers.cmake)

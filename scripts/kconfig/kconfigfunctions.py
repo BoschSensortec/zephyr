@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import pickle
 import sys
 
 ZEPHYR_BASE = os.environ.get("ZEPHYR_BASE")
@@ -17,12 +18,12 @@ import edtlib
 doc_mode = os.environ.get('KCONFIG_DOC_MODE') == "1"
 
 if not doc_mode:
-    DTS_POST_CPP = os.environ["DTS_POST_CPP"]
-    BINDINGS_DIRS = os.environ.get("DTS_ROOT_BINDINGS")
+    EDT_PICKLE = os.environ.get("EDT_PICKLE")
 
-    # if a board port doesn't use DTS than these might not be set
-    if os.path.isfile(DTS_POST_CPP) and BINDINGS_DIRS is not None:
-        edt = edtlib.EDT(DTS_POST_CPP, BINDINGS_DIRS.split("?"))
+    # The "if" handles a missing dts.
+    if EDT_PICKLE is not None and os.path.isfile(EDT_PICKLE):
+        with open(EDT_PICKLE, 'rb') as f:
+            edt = pickle.load(f)
     else:
         edt = None
 
@@ -74,19 +75,64 @@ def dt_chosen_enabled(kconf, _, chosen):
     return "y" if node and node.enabled else "n"
 
 
-def dt_nodelabel_enabled(kconf, _, label):
+def dt_chosen_path(kconf, _, chosen):
     """
-    This function takes a 'label' and returns "y" if we find an "enabled"
-    node that has a 'nodelabel' of 'label' in the EDT otherwise we return "n"
+    This function takes a /chosen node property and returns the path
+    to the node in the property value, or the empty string.
     """
     if doc_mode or edt is None:
         return "n"
 
-    for node in edt.nodes:
-        if label in node.labels and node.enabled:
-            return "y"
+    node = edt.chosen_node(chosen)
 
-    return "n"
+    return node.path if node else ""
+
+
+def dt_node_enabled(kconf, name, node):
+    """
+    This function is used to test if a node is enabled (has status
+    'okay') or not.
+
+    The 'node' argument is a string which is either a path or an
+    alias, or both, depending on 'name'.
+
+    If 'name' is 'dt_path_enabled', 'node' is an alias or a path. If
+    'name' is 'dt_alias_enabled, 'node' is an alias.
+    """
+
+    if doc_mode or edt is None:
+        return "n"
+
+    if name == "dt_alias_enabled":
+        if node.startswith("/"):
+            # EDT.get_node() works with either aliases or paths. If we
+            # are specifically being asked about an alias, reject paths.
+            return "n"
+    else:
+        # Make sure this is being called appropriately.
+        assert name == "dt_path_enabled"
+
+    try:
+        node = edt.get_node(node)
+    except edtlib.EDTError:
+        return "n"
+
+    return "y" if node and node.enabled else "n"
+
+
+def dt_nodelabel_enabled(kconf, _, label):
+    """
+    This function is like dt_node_enabled(), but the 'label' argument
+    should be a node label, like "foo" is here:
+
+       foo: some-node { ... };
+    """
+    if doc_mode or edt is None:
+        return "n"
+
+    node = edt.label2node.get(label)
+
+    return "y" if node and node.enabled else "n"
 
 
 def _node_reg_addr(node, index, unit):
@@ -310,11 +356,7 @@ def dt_compat_enabled(kconf, _, compat):
     if doc_mode or edt is None:
         return "n"
 
-    for node in edt.nodes:
-        if compat in node.compats and node.enabled:
-            return "y"
-
-    return "n"
+    return "y" if compat in edt.compat2enabled else "n"
 
 
 def dt_compat_on_bus(kconf, _, compat, bus):
@@ -348,6 +390,20 @@ def dt_nodelabel_has_compat(kconf, _, label, compat):
     return "n"
 
 
+def dt_nodelabel_path(kconf, _, label):
+    """
+    This function takes a node label (not a label property) and
+    returns the path to the node which has that label, or an empty
+    string if there is no such node.
+    """
+    if doc_mode or edt is None:
+        return ""
+
+    node = edt.label2node.get(label)
+
+    return node.path if node else ""
+
+
 def shields_list_contains(kconf, _, shield):
     """
     Return "n" if cmake environment variable 'SHIELD_AS_LIST' doesn't exist.
@@ -362,11 +418,23 @@ def shields_list_contains(kconf, _, shield):
     return "y" if shield in list.split(";") else "n"
 
 
+# Keys in this dict are the function names as they appear
+# in Kconfig files. The values are tuples in this form:
+#
+#       (python_function, minimum_number_of_args, maximum_number_of_args)
+#
+# Each python function is given a kconf object and its name in the
+# Kconfig file, followed by arguments from the Kconfig file.
+#
+# See the kconfiglib documentation for more details.
 functions = {
         "dt_compat_enabled": (dt_compat_enabled, 1, 1),
         "dt_compat_on_bus": (dt_compat_on_bus, 2, 2),
         "dt_chosen_label": (dt_chosen_label, 1, 1),
         "dt_chosen_enabled": (dt_chosen_enabled, 1, 1),
+        "dt_chosen_path": (dt_chosen_path, 1, 1),
+        "dt_path_enabled": (dt_node_enabled, 1, 1),
+        "dt_alias_enabled": (dt_node_enabled, 1, 1),
         "dt_nodelabel_enabled": (dt_nodelabel_enabled, 1, 1),
         "dt_chosen_reg_addr_int": (dt_chosen_reg, 1, 3),
         "dt_chosen_reg_addr_hex": (dt_chosen_reg, 1, 3),
@@ -380,5 +448,6 @@ functions = {
         "dt_node_int_prop_int": (dt_node_int_prop, 2, 2),
         "dt_node_int_prop_hex": (dt_node_int_prop, 2, 2),
         "dt_nodelabel_has_compat": (dt_nodelabel_has_compat, 2, 2),
+        "dt_nodelabel_path": (dt_nodelabel_path, 1, 1),
         "shields_list_contains": (shields_list_contains, 1, 1),
 }

@@ -1,6 +1,6 @@
 .. _stm32f3_disco_board:
 
-ST STM32F3 DISCOVERY
+ST STM32F3 Discovery
 ####################
 
 Overview
@@ -96,6 +96,11 @@ features:
 +-----------+------------+-------------------------------------+
 | CAN       | on-chip    | CAN                                 |
 +-----------+------------+-------------------------------------+
+| IWDG      | on-chip    | Independent WatchDoG                |
++-----------+------------+-------------------------------------+
+| PWM       | on-chip    | pwm                                 |
++-----------+------------+-------------------------------------+
+
 
 Other hardware features are not yet supported on Zephyr porting.
 
@@ -146,6 +151,7 @@ Default Zephyr Peripheral Mapping:
 - LD8 : PE14
 - LD9 : PE12
 - LD10 : PE13
+- PWM : PA8
 
 System Clock
 ============

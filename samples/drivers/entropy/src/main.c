@@ -10,7 +10,7 @@
 
 void main(void)
 {
-	struct device *dev;
+	const struct device *dev;
 
 	printf("Entropy Example! %s\n", CONFIG_ARCH);
 
@@ -21,11 +21,11 @@ void main(void)
 	}
 
 	printf("entropy device is %p, name is %s\n",
-	       dev, dev->config->name);
+	       dev, dev->name);
 
 	while (1) {
 #define BUFFER_LENGTH 10
-		u8_t buffer[BUFFER_LENGTH] = {0};
+		uint8_t buffer[BUFFER_LENGTH] = {0};
 		int r;
 
 		/* The BUFFER_LENGTH-1 is used so the driver will not

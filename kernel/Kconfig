@@ -188,11 +188,6 @@ config THREAD_USERSPACE_LOCAL_DATA
 	bool
 	depends on USERSPACE
 
-config THREAD_USERSPACE_LOCAL_DATA_ARCH_DEFER_SETUP
-	bool
-	depends on THREAD_USERSPACE_LOCAL_DATA
-	default y if ARC || ARM
-
 config ERRNO
 	bool "Enable errno support"
 	default y
@@ -297,14 +292,6 @@ config INIT_STACKS
 	  water mark can be easily determined. This applies to the stack areas
 	  for threads, as well as to the interrupt stack.
 
-config KERNEL_DEBUG
-	bool "Kernel debugging"
-	select INIT_STACKS
-	help
-	  Enable kernel debugging.
-
-	  Note that debugging the kernel internals can be very verbose.
-
 config BOOT_BANNER
 	bool "Boot banner"
 	default y
@@ -326,14 +313,6 @@ config BOOT_DELAY
 	  receive before it actually gets data. A similar effect can be
 	  achieved by waiting for DCD on the serial port--however, not
 	  all serial ports have DCD.
-
-config EXECUTION_BENCHMARKING
-	bool "Timing metrics"
-	help
-	  This option enables the tracking of various times inside the kernel
-	  the exact set of metrics being tracked is board-dependent.
-	  All timing measurements are enabled for X86 and ARM based architectures.
-	  In other architectures only a subset is enabled.
 
 config THREAD_MONITOR
 	bool "Thread monitoring [EXPERIMENTAL]"
@@ -437,7 +416,7 @@ config POLL
 	  Asynchronous notification framework. Enable the k_poll() and
 	  k_poll_signal_raise() APIs.  The former can wait on multiple events
 	  concurrently, which can be either directly triggered or triggered by
-	  the availability of some kernel objects (semaphores and fifos).
+	  the availability of some kernel objects (semaphores and FIFOs).
 
 endmenu
 
@@ -481,9 +460,9 @@ config HEAP_MEM_POOL_SIZE
 	default 1024 if POSIX_MQUEUE
 	help
 	  This option specifies the size of the heap memory pool used when
-	  dynamically allocating memory using k_malloc(). Supported values
-	  are: 256, 1024, 4096, and 16384. A size of zero means that no
-	  heap memory pool is defined.
+	  dynamically allocating memory using k_malloc(). The maximum size of
+	  the memory pool is only limited to available memory. A size of zero
+	  means that no heap memory pool is defined.
 
 config HEAP_MEM_POOL_MIN_SIZE
 	int "The smallest blocks in the heap memory pool (in bytes)"
@@ -577,11 +556,11 @@ config LEGACY_TIMEOUT_API
 	  The k_timeout_t API has changed to become an opaque type
 	  that must be initialized with macros.  Older applications
 	  can choose this to continue using the old style of timeouts
-	  (which were s32_t counts of milliseconds), at the cost of
+	  (which were int32_t counts of milliseconds), at the cost of
 	  not being able to use new features.
 
 config TIMEOUT_64BIT
-	bool
+	bool "Store kernel timeouts in 64 bit precision"
 	depends on !LEGACY_TIMEOUT_API
 	default y
 	help
@@ -709,6 +688,48 @@ config MAX_DOMAIN_PARTITIONS
 	help
 	  Configure the maximum number of partitions per memory domain.
 
+config ARCH_MEM_DOMAIN_DATA
+	bool
+	depends on USERSPACE
+	help
+	  This hidden option is selected by the target architecture if
+	  architecture-specific data is needed on a per memory domain basis.
+	  If so, the architecture defines a 'struct arch_mem_domain' which is
+	  embedded within every struct k_mem_domain. The architecture
+	  must also define the arch_mem_domain_init() function to set this up
+	  when a memory domain is created.
+
+	  Typical uses might be a set of page tables for that memory domain.
+
+config ARCH_MEM_DOMAIN_SYNCHRONOUS_API
+	bool
+	depends on USERSPACE
+	help
+	  This hidden option is selected by the target architecture if
+	  modifying a memory domain's partitions at runtime, or changing
+	  a memory domain's thread membership requires synchronous calls
+	  into the architecture layer.
+
+	  If enabled, the architecture layer must implement the following
+	  APIs:
+
+	  arch_mem_domain_thread_add
+	  arch_mem_domain_thread_remove
+	  arch_mem_domain_partition_remove
+	  arch_mem_domain_partition_add
+	  arch_mem_domain_destroy
+
+	  It's important to note that although supervisor threads can be
+	  members of memory domains, they have no implications on supervisor
+	  thread access to memory. Memory domain APIs may only be invoked from
+	  supervisor mode.
+
+	  For these reasons, on uniprocessor systems unless memory access
+	  policy is managed in separate software constructions like page
+	  tables, these APIs don't need to be implemented as the underlying
+	  memory management hardware will be reprogrammed on context switch
+	  anyway.
+
 menu "SMP Options"
 
 config USE_SWITCH
@@ -755,6 +776,15 @@ config SCHED_IPI_SUPPORTED
 	  take an interrupt, which can be arbitrarily far in the
 	  future).
 
+config TRACE_SCHED_IPI
+	bool "Enable Test IPI"
+	help
+	  When true, it will add a hook into z_sched_ipi(), in order
+	  to check if schedule IPI has called or not, for testing
+	  purpose.
+	depends on SCHED_IPI_SUPPORTED
+	depends on MP_NUM_CPUS>1
+
 endmenu
 
 config TICKLESS_IDLE
@@ -784,7 +814,5 @@ config TICKLESS_KERNEL
 	help
 	  This option enables a fully event driven kernel. Periodic system
 	  clock interrupt generation would be stopped at all times.
-
-source "kernel/Kconfig.power_mgmt"
 
 endmenu

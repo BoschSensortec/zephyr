@@ -14,3 +14,24 @@ properties:
     "#size-cells":
       required: true
       const: 1
+
+child-binding:
+    description: atmel pins
+    properties:
+      "atmel,pins":
+        type: phandle-array
+
+      bias-pull-up:
+        required: false
+        type: boolean
+        description: pull up the pin
+
+      bias-pull-down:
+        required: false
+        type: boolean
+        description: pull down the pin
+
+      drive-open-drain:
+        required: false
+        type: boolean
+        description: drive with open drain

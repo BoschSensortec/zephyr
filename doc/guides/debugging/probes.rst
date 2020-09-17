@@ -184,19 +184,21 @@ and debug tool. Flash and debug can be done as follows:
      :goals: debug
 
 
+.. _jlink-rtt-debug-probe:
+
 Using Segger J-Link
 -------------------
 
 Once STLink is flashed with SEGGER FW and J-Link GDB server is installed on your
 host computer, you can flash and debug as follows:
 
-Use CMake with ``-DZEPHYR_BOARD_FLASH_RUNNER=jlink`` to change the default OpenOCD
+Use CMake with ``-DBOARD_FLASH_RUNNER=jlink`` to change the default OpenOCD
 runner to J-Link. Alternatively, you might add the following line to your
 application ``CMakeList.txt`` file.
 
   .. code-block:: cmake
 
-     set(ZEPHYR_BOARD_FLASH_RUNNER jlink)
+     set(BOARD_FLASH_RUNNER jlink)
 
 If you use West (Zephyr's meta-tool) you can modify the default runner using
 the ``--runner`` (or ``-r``) option.
@@ -233,6 +235,24 @@ open telnet:
 If you get no RTT output you might need to disable other consoles which conflict
 with the RTT one if they are enabled by default in the particular sample or
 application you are running, such as disable UART_CONSOLE in menucon
+
+Updating or restoring ST-Link firmware
+======================================
+
+ST-Link firmware can be updated using `STM32CubeProgrammer Tool`_.
+It is usually useful when facing flashing issues, for instance when using
+sanitycheck's device-testing option.
+
+Once installed, you can update attached board ST-Link firmware with the
+following command
+
+  .. code-block:: console
+
+     s java -jar ~/STMicroelectronics/STM32Cube/STM32CubeProgrammer/Drivers/FirmwareUpgrade/STLinkUpgrade.jar -sn <board_uid>
+
+Where board_uid can be obtained using sanitycheck's generate-hardware-map
+option. For more information about sanitycheck and available options, see
+:ref:`sanitycheck_script`.
 
 .. _jlink-external-debug-probe:
 
@@ -273,3 +293,6 @@ Install the debug host tools before you program the firmware.
 
 .. _Segger RTT:
     https://www.segger.com/jlink-rtt.html
+
+.. _STM32CubeProgrammer Tool:
+    https://www.st.com/en/development-tools/stm32cubeprog.html

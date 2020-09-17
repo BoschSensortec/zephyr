@@ -49,7 +49,7 @@ config HEAP_MEM_POOL_SIZE
 	default 1024
 	depends on DMA_DW
 
-config TEXT_SECTION_OFFSET
+config ROM_START_OFFSET
 	default 0x100
 	depends on BOOTLOADER_MCUBOOT
 
@@ -95,8 +95,6 @@ endif # SERIAL
 if I2C
 
 config I2C_DW
-	default y
-config I2C_0
 	default y
 
 endif

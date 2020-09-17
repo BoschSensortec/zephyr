@@ -145,7 +145,9 @@ _slave_core_wait:
 	st 0, [arc_cpu_wake_flag]
 
 #if defined(CONFIG_ARC_FIRQ_STACK)
+	push r0
 	jl z_arc_firq_stack_set
+	pop r0
 #endif
 	j z_arc_slave_start
 
@@ -175,4 +177,4 @@ _master_core_startup:
 	jl z_arc_firq_stack_set
 #endif
 
-	j @_PrepC
+	j _PrepC

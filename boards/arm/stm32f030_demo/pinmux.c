@@ -15,13 +15,13 @@
 
 /* pin assignments for STM32F030 DEMO board */
 static const struct pin_config pinconf[] = {
-#ifdef CONFIG_UART_1
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(usart1), okay) && CONFIG_SERIAL
 	{STM32_PIN_PA9, STM32F0_PINMUX_FUNC_PA9_USART1_TX},
 	{STM32_PIN_PA10, STM32F0_PINMUX_FUNC_PA10_USART1_RX},
-#endif /* CONFIG_UART_1 */
+#endif
 };
 
-static int pinmux_stm32_init(struct device *port)
+static int pinmux_stm32_init(const struct device *port)
 {
 	ARG_UNUSED(port);
 

@@ -11,7 +11,7 @@
 
 void main(void)
 {
-	struct device *dev;
+	const struct device *dev;
 	struct sensor_value temperature, humidity;
 
 	dev = device_get_binding(DT_LABEL(DT_INST(0, ams_ens210)));
@@ -20,7 +20,7 @@ void main(void)
 		return;
 	}
 
-	printk("device is %p, name is %s\n", dev, dev->config->name);
+	printk("device is %p, name is %s\n", dev, dev->name);
 
 	while (1) {
 		sensor_sample_fetch(dev);

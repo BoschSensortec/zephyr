@@ -5,9 +5,8 @@
  */
 
 #define DT_DRV_COMPAT inventek_eswifi
-#define LOG_LEVEL CONFIG_WIFI_LOG_LEVEL
-#include <logging/log.h>
-LOG_MODULE_REGISTER(wifi_eswifi_core);
+#include "eswifi_log.h"
+LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <zephyr.h>
 #include <kernel.h>
@@ -34,7 +33,7 @@ LOG_MODULE_REGISTER(wifi_eswifi_core);
 #include "eswifi.h"
 
 #define ESWIFI_WORKQUEUE_STACK_SIZE 1024
-K_THREAD_STACK_DEFINE(eswifi_work_q_stack, ESWIFI_WORKQUEUE_STACK_SIZE);
+K_KERNEL_STACK_DEFINE(eswifi_work_q_stack, ESWIFI_WORKQUEUE_STACK_SIZE);
 
 static struct eswifi_dev eswifi0; /* static instance */
 
@@ -53,24 +52,24 @@ static int eswifi_reset(struct eswifi_dev *eswifi)
 
 static inline int __parse_ssid(char *str, char *ssid)
 {
-	/* fnt => '"SSID"' */
+	int i = 0;
 
-	if (!*str || (*str != '"')) {
-		return -EINVAL;
-	}
-
-	str++;
-	while (*str && (*str != '"')) {
-		*ssid++ = *str++;
-	}
-
-	*ssid = '\0';
+	/* fmt => "SSID" */
 
 	if (*str != '"') {
-		return -EINVAL;
+		return 0;
+	}
+	str++;
+
+	while (*str && (*str != '"') && i < WIFI_SSID_MAX_LEN) {
+		ssid[i++] = *str++;
 	}
 
-	return -EINVAL;
+	if (*str != '"') {
+		return 0;
+	}
+
+	return i;
 }
 
 static void __parse_scan_res(char *str, struct wifi_scan_result *res)
@@ -91,8 +90,7 @@ static void __parse_scan_res(char *str, struct wifi_scan_result *res)
 
 		switch (++field) {
 		case 1: /* SSID */
-			__parse_ssid(str, res->ssid);
-			res->ssid_length = strlen(res->ssid);
+			res->ssid_length = __parse_ssid(str, res->ssid);
 			str += res->ssid_length;
 			break;
 		case 2: /* mac addr */
@@ -169,22 +167,22 @@ int eswifi_at_cmd(struct eswifi_dev *eswifi, char *cmd)
 	return eswifi_at_cmd_rsp(eswifi, cmd, NULL);
 }
 
-struct eswifi_dev *eswifi_by_iface_idx(u8_t iface)
+struct eswifi_dev *eswifi_by_iface_idx(uint8_t iface)
 {
 	/* only one instance */
 	LOG_DBG("%d", iface);
 	return &eswifi0;
 }
 
-static int __parse_ipv4_address(char *str, char *ssid, u8_t ip[4])
+static int __parse_ipv4_address(char *str, char *ssid, uint8_t ip[4])
 {
-	unsigned int byte = -1;
+	int byte = -1;
 
 	/* fmt => [JOIN   ] SSID,192.168.2.18,0,0 */
-	while (*str) {
+	while (*str && byte < 4) {
 		if (byte == -1) {
 			if (!strncmp(str, ssid, strlen(ssid))) {
-				byte = 0U;
+				byte = 0;
 				str += strlen(ssid);
 			}
 			str++;
@@ -231,6 +229,9 @@ static void eswifi_scan(struct eswifi_dev *eswifi)
 		}
 	}
 
+	/* WiFi scan is done. */
+	eswifi->scan_cb(eswifi->iface, 0, NULL);
+
 	eswifi_unlock(eswifi);
 }
 
@@ -241,13 +242,13 @@ static int eswifi_connect(struct eswifi_dev *eswifi)
 	char *rsp;
 	int err;
 
-	LOG_DBG("Connecting to %s (pass=%s)", eswifi->sta.ssid,
-		eswifi->sta.pass);
+	LOG_DBG("Connecting to %s (pass=%s)", log_strdup(eswifi->sta.ssid),
+		log_strdup(eswifi->sta.pass));
 
 	eswifi_lock(eswifi);
 
 	/* Set SSID */
-	snprintf(eswifi->buf, sizeof(eswifi->buf), "C1=%s\r", eswifi->sta.ssid);
+	snprintk(eswifi->buf, sizeof(eswifi->buf), "C1=%s\r", eswifi->sta.ssid);
 	err = eswifi_at_cmd(eswifi, eswifi->buf);
 	if (err < 0) {
 		LOG_ERR("Unable to set SSID");
@@ -255,7 +256,7 @@ static int eswifi_connect(struct eswifi_dev *eswifi)
 	}
 
 	/* Set passphrase */
-	snprintf(eswifi->buf, sizeof(eswifi->buf), "C2=%s\r", eswifi->sta.pass);
+	snprintk(eswifi->buf, sizeof(eswifi->buf), "C2=%s\r", eswifi->sta.pass);
 	err = eswifi_at_cmd(eswifi, eswifi->buf);
 	if (err < 0) {
 		LOG_ERR("Unable to set passphrase");
@@ -263,7 +264,7 @@ static int eswifi_connect(struct eswifi_dev *eswifi)
 	}
 
 	/* Set Security type */
-	snprintf(eswifi->buf, sizeof(eswifi->buf), "C3=%u\r",
+	snprintk(eswifi->buf, sizeof(eswifi->buf), "C3=%u\r",
 		 eswifi->sta.security);
 	err = eswifi_at_cmd(eswifi, eswifi->buf);
 	if (err < 0) {
@@ -280,7 +281,7 @@ static int eswifi_connect(struct eswifi_dev *eswifi)
 
 	/* Any IP assigned ? (dhcp offload or manually) */
 	err = __parse_ipv4_address(rsp, eswifi->sta.ssid,
-				   (u8_t *)&addr.s4_addr);
+				   (uint8_t *)&addr.s4_addr);
 	if (err < 0) {
 		LOG_ERR("Unable to retrieve IP address");
 		goto error;
@@ -348,7 +349,7 @@ static void eswifi_request_work(struct k_work *item)
 	}
 }
 
-static int eswifi_get_mac_addr(struct eswifi_dev *eswifi, u8_t addr[6])
+static int eswifi_get_mac_addr(struct eswifi_dev *eswifi, uint8_t addr[6])
 {
 	char cmd[] = "Z5\r";
 	int ret, i, byte = 0;
@@ -375,7 +376,7 @@ static int eswifi_get_mac_addr(struct eswifi_dev *eswifi, u8_t addr[6])
 static void eswifi_iface_init(struct net_if *iface)
 {
 	struct eswifi_dev *eswifi = &eswifi0;
-	u8_t mac[6];
+	uint8_t mac[6];
 
 	LOG_DBG("");
 
@@ -409,9 +410,9 @@ static void eswifi_iface_init(struct net_if *iface)
 
 }
 
-static int eswifi_mgmt_scan(struct device *dev, scan_result_cb_t cb)
+static int eswifi_mgmt_scan(const struct device *dev, scan_result_cb_t cb)
 {
-	struct eswifi_dev *eswifi = dev->driver_data;
+	struct eswifi_dev *eswifi = dev->data;
 
 	LOG_DBG("");
 
@@ -426,9 +427,9 @@ static int eswifi_mgmt_scan(struct device *dev, scan_result_cb_t cb)
 	return 0;
 }
 
-static int eswifi_mgmt_disconnect(struct device *dev)
+static int eswifi_mgmt_disconnect(const struct device *dev)
 {
-	struct eswifi_dev *eswifi = dev->driver_data;
+	struct eswifi_dev *eswifi = dev->data;
 
 	LOG_DBG("");
 
@@ -471,10 +472,10 @@ static int __eswifi_sta_config(struct eswifi_dev *eswifi,
 	return 0;
 }
 
-static int eswifi_mgmt_connect(struct device *dev,
+static int eswifi_mgmt_connect(const struct device *dev,
 			       struct wifi_connect_req_params *params)
 {
-	struct eswifi_dev *eswifi = dev->driver_data;
+	struct eswifi_dev *eswifi = dev->data;
 	int err;
 
 	LOG_DBG("");
@@ -499,10 +500,10 @@ void eswifi_async_msg(struct eswifi_dev *eswifi, char *msg, size_t len)
 }
 
 #if defined(CONFIG_NET_IPV4)
-static int eswifi_mgmt_ap_enable(struct device *dev,
+static int eswifi_mgmt_ap_enable(const struct device *dev,
 				 struct wifi_connect_req_params *params)
 {
-	struct eswifi_dev *eswifi = dev->driver_data;
+	struct eswifi_dev *eswifi = dev->data;
 	struct net_if_ipv4 *ipv4 = eswifi->iface->config.ip.ipv4;
 	struct net_if_addr *unicast = NULL;
 	int err = -EIO, i;
@@ -522,7 +523,7 @@ static int eswifi_mgmt_ap_enable(struct device *dev,
 	}
 
 	/* security */
-	snprintf(eswifi->buf, sizeof(eswifi->buf), "A1=%u\r",
+	snprintk(eswifi->buf, sizeof(eswifi->buf), "A1=%u\r",
 		 eswifi->sta.security);
 	err = eswifi_at_cmd(eswifi, eswifi->buf);
 	if (err < 0) {
@@ -532,7 +533,7 @@ static int eswifi_mgmt_ap_enable(struct device *dev,
 
 	/* Passkey */
 	if (eswifi->sta.security != ESWIFI_SEC_OPEN) {
-		snprintf(eswifi->buf, sizeof(eswifi->buf), "A2=%s\r",
+		snprintk(eswifi->buf, sizeof(eswifi->buf), "A2=%s\r",
 			 eswifi->sta.pass);
 		err = eswifi_at_cmd(eswifi, eswifi->buf);
 		if (err < 0) {
@@ -542,7 +543,7 @@ static int eswifi_mgmt_ap_enable(struct device *dev,
 	}
 
 	/* Set SSID (0=no MAC, 1=append MAC) */
-	snprintf(eswifi->buf, sizeof(eswifi->buf), "AS=0,%s\r",
+	snprintk(eswifi->buf, sizeof(eswifi->buf), "AS=0,%s\r",
 		 eswifi->sta.ssid);
 	err = eswifi_at_cmd(eswifi, eswifi->buf);
 	if (err < 0) {
@@ -551,7 +552,7 @@ static int eswifi_mgmt_ap_enable(struct device *dev,
 	}
 
 	/* Set Channel */
-	snprintf(eswifi->buf, sizeof(eswifi->buf), "AC=%u\r",
+	snprintk(eswifi->buf, sizeof(eswifi->buf), "AC=%u\r",
 		 eswifi->sta.channel);
 	err = eswifi_at_cmd(eswifi, eswifi->buf);
 	if (err < 0) {
@@ -573,7 +574,7 @@ static int eswifi_mgmt_ap_enable(struct device *dev,
 		goto error;
 	}
 
-	snprintf(eswifi->buf, sizeof(eswifi->buf), "Z6=%s\r",
+	snprintk(eswifi->buf, sizeof(eswifi->buf), "Z6=%s\r",
 		 net_sprint_ipv4_addr(&unicast->address.in_addr));
 	err = eswifi_at_cmd(eswifi, eswifi->buf);
 	if (err < 0) {
@@ -582,7 +583,7 @@ static int eswifi_mgmt_ap_enable(struct device *dev,
 	}
 
 	/* Enable AP */
-	snprintf(eswifi->buf, sizeof(eswifi->buf), "AD\r");
+	snprintk(eswifi->buf, sizeof(eswifi->buf), "AD\r");
 	err = eswifi_at_cmd(eswifi, eswifi->buf);
 	if (err < 0) {
 		LOG_ERR("Unable to active access point");
@@ -598,7 +599,7 @@ error:
 	return err;
 }
 #else
-static int eswifi_mgmt_ap_enable(struct device *dev,
+static int eswifi_mgmt_ap_enable(const struct device *dev,
 				 struct wifi_connect_req_params *params)
 {
 	LOG_ERR("IPv4 requested for AP mode");
@@ -606,9 +607,9 @@ static int eswifi_mgmt_ap_enable(struct device *dev,
 }
 #endif /* CONFIG_NET_IPV4 */
 
-static int eswifi_mgmt_ap_disable(struct device *dev)
+static int eswifi_mgmt_ap_disable(const struct device *dev)
 {
-	struct eswifi_dev *eswifi = dev->driver_data;
+	struct eswifi_dev *eswifi = dev->data;
 	char cmd[] = "AE\r";
 	int err;
 
@@ -627,9 +628,9 @@ static int eswifi_mgmt_ap_disable(struct device *dev)
 	return 0;
 }
 
-static int eswifi_init(struct device *dev)
+static int eswifi_init(const struct device *dev)
 {
-	struct eswifi_dev *eswifi = dev->driver_data;
+	struct eswifi_dev *eswifi = dev->data;
 
 	LOG_DBG("");
 
@@ -664,10 +665,12 @@ static int eswifi_init(struct device *dev)
 			   GPIO_OUTPUT_ACTIVE);
 
 	k_work_q_start(&eswifi->work_q, eswifi_work_q_stack,
-		       K_THREAD_STACK_SIZEOF(eswifi_work_q_stack),
+		       K_KERNEL_STACK_SIZEOF(eswifi_work_q_stack),
 		       CONFIG_SYSTEM_WORKQUEUE_PRIORITY - 1);
 
 	k_work_init(&eswifi->request_work, eswifi_request_work);
+
+	eswifi_shell_register(eswifi);
 
 	return 0;
 }

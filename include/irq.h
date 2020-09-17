@@ -44,8 +44,6 @@ extern "C" {
  * @param isr_p Address of interrupt service routine.
  * @param isr_param_p Parameter passed to interrupt service routine.
  * @param flags_p Architecture-specific IRQ configuration flags..
- *
- * @return Interrupt vector assigned to this interrupt.
  */
 #define IRQ_CONNECT(irq_p, priority_p, isr_p, isr_param_p, flags_p) \
 	ARCH_IRQ_CONNECT(irq_p, priority_p, isr_p, isr_param_p, flags_p)
@@ -65,8 +63,8 @@ extern "C" {
  */
 static inline int
 irq_connect_dynamic(unsigned int irq, unsigned int priority,
-		    void (*routine)(void *parameter), void *parameter,
-		    u32_t flags)
+		    void (*routine)(const void *parameter),
+		    const void *parameter, uint32_t flags)
 {
 	return arch_irq_connect_dynamic(irq, priority, routine, parameter,
 					flags);
@@ -109,8 +107,6 @@ irq_connect_dynamic(unsigned int irq, unsigned int priority,
  * @param priority_p Interrupt priority.
  * @param isr_p Address of interrupt service routine.
  * @param flags_p Architecture-specific IRQ configuration flags.
- *
- * @return Interrupt vector assigned to this interrupt.
  */
 #define IRQ_DIRECT_CONNECT(irq_p, priority_p, isr_p, flags_p) \
 	ARCH_IRQ_DIRECT_CONNECT(irq_p, priority_p, isr_p, flags_p)

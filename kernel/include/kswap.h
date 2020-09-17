@@ -64,11 +64,6 @@ static ALWAYS_INLINE unsigned int do_swap(unsigned int key,
 	ARG_UNUSED(lock);
 	struct k_thread *new_thread, *old_thread;
 
-#ifdef CONFIG_EXECUTION_BENCHMARKING
-	extern void read_timer_start_of_swap(void);
-	read_timer_start_of_swap();
-#endif
-
 	old_thread = _current;
 
 	z_check_stack_sentinel();
@@ -97,7 +92,6 @@ static ALWAYS_INLINE unsigned int do_swap(unsigned int key,
 #endif
 
 	if (new_thread != old_thread) {
-		sys_trace_thread_switched_out();
 #ifdef CONFIG_TIMESLICING
 		z_reset_time_slice();
 #endif
@@ -113,11 +107,12 @@ static ALWAYS_INLINE unsigned int do_swap(unsigned int key,
 			z_smp_release_global_lock(new_thread);
 		}
 #endif
+		sys_trace_thread_switched_out();
 		_current_cpu->current = new_thread;
 		wait_for_switch(new_thread);
 		arch_switch(new_thread->switch_handle,
 			     &old_thread->switch_handle);
-		sys_trace_thread_switched_in();
+
 	}
 
 	if (is_spinlock) {
@@ -155,13 +150,7 @@ static inline int z_swap_irqlock(unsigned int key)
 {
 	int ret;
 	z_check_stack_sentinel();
-#ifndef CONFIG_ARM
-	sys_trace_thread_switched_out();
-#endif
 	ret = arch_swap(key);
-#ifndef CONFIG_ARM
-	sys_trace_thread_switched_in();
-#endif
 	return ret;
 }
 
@@ -180,6 +169,32 @@ static inline void z_swap_unlocked(void)
 	(void) z_swap_irqlock(arch_irq_lock());
 }
 
+#endif /* !CONFIG_USE_SWITCH */
+
+/**
+ * Set up a "dummy" thread, used at early initialization to launch the
+ * first thread on a CPU.
+ *
+ * Needs to set enough fields such that the context switching code can
+ * use it to properly store state, which will just be discarded.
+ *
+ * The memory of the dummy thread can be completely uninitialized.
+ */
+static inline void z_dummy_thread_init(struct k_thread *dummy_thread)
+{
+	dummy_thread->base.thread_state = _THREAD_DUMMY;
+#ifdef CONFIG_SCHED_CPU_MASK
+	dummy_thread->base.cpu_mask = -1;
+#endif
+	dummy_thread->base.user_options = K_ESSENTIAL;
+#ifdef CONFIG_THREAD_STACK_INFO
+	dummy_thread->stack_info.start = 0U;
+	dummy_thread->stack_info.size = 0U;
+#endif
+#ifdef CONFIG_USERSPACE
+	dummy_thread->mem_domain_info.mem_domain = &k_mem_domain_default;
 #endif
 
+	_current_cpu->current = dummy_thread;
+}
 #endif /* ZEPHYR_KERNEL_INCLUDE_KSWAP_H_ */
