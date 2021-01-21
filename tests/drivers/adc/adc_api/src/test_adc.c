@@ -35,6 +35,7 @@
 #elif defined(CONFIG_BOARD_NRF21540DK_NRF52840) || \
 	defined(CONFIG_BOARD_NRF52DK_NRF52832) || \
 	defined(CONFIG_BOARD_NRF52840DK_NRF52840) || \
+	defined(CONFIG_BOARD_RAK5010_NRF52840) || \
 	defined(CONFIG_BOARD_NRF52840DONGLE_NRF52840) || \
 	defined(CONFIG_BOARD_NRF52840_BLIP) || \
 	defined(CONFIG_BOARD_NRF52840_PAPYR) || \
@@ -46,7 +47,8 @@
 	defined(CONFIG_BOARD_ADAFRUIT_FEATHER_NRF52840)	|| \
 	defined(CONFIG_BOARD_RUUVI_RUUVITAG) || \
 	defined(CONFIG_BOARD_BT510) || \
-	defined(CONFIG_BOARD_PINNACLE_100_DVK)
+	defined(CONFIG_BOARD_PINNACLE_100_DVK) || \
+	defined(CONFIG_BOARD_ARDUINO_NANO_33_BLE)
 
 #include <hal/nrf_saadc.h>
 #define ADC_DEVICE_NAME		DT_LABEL(DT_INST(0, nordic_nrf_saadc))
@@ -146,13 +148,17 @@
 #elif defined(CONFIG_BOARD_NUCLEO_F091RC) || \
 	defined(CONFIG_BOARD_NUCLEO_F103RB) || \
 	defined(CONFIG_BOARD_NUCLEO_F207ZG) || \
+	defined(CONFIG_BOARD_STM32F3_DISCO) || \
 	defined(CONFIG_BOARD_NUCLEO_F401RE) || \
+	defined(CONFIG_BOARD_NUCLEO_F429ZI) || \
 	defined(CONFIG_BOARD_NUCLEO_F746ZG) || \
+	defined(CONFIG_BOARD_NUCLEO_G071RB) || \
 	defined(CONFIG_BOARD_NUCLEO_L073RZ) || \
 	defined(CONFIG_BOARD_NUCLEO_WB55RG) || \
 	defined(CONFIG_BOARD_NUCLEO_L152RE) || \
 	defined(CONFIG_BOARD_OLIMEX_STM32_H103) || \
 	defined(CONFIG_BOARD_96B_AEROCORE2) || \
+	defined(CONFIG_BOARD_STM32F103_MINI) || \
 	defined(CONFIG_BOARD_STM32_MIN_DEV_BLUE) || \
 	defined(CONFIG_BOARD_STM32_MIN_DEV_BLACK) || \
 	defined(CONFIG_BOARD_WAVESHARE_OPEN103Z)
@@ -163,7 +169,7 @@
 #define ADC_ACQUISITION_TIME	ADC_ACQ_TIME_DEFAULT
 #define ADC_1ST_CHANNEL_ID	0
 
-#elif defined(CONFIG_BOARD_NUCLEO_F302R8)
+#elif defined(CONFIG_BOARD_NUCLEO_F302R8) || defined(CONFIG_BOARD_NUCLEO_G474RE)
 #define ADC_DEVICE_NAME         DT_LABEL(DT_INST(0, st_stm32_adc))
 #define ADC_RESOLUTION		12
 #define ADC_GAIN		ADC_GAIN_1
@@ -173,7 +179,10 @@
 #define ADC_1ST_CHANNEL_ID	1
 
 #elif defined(CONFIG_BOARD_NUCLEO_L476RG) || \
-	defined(CONFIG_BOARD_BLACKPILL_F411CE)
+	defined(CONFIG_BOARD_BLACKPILL_F411CE) || \
+	defined(CONFIG_BOARD_BLACKPILL_F401CE) || \
+	defined(CONFIG_BOARD_NUCLEO_L4R5ZI) || \
+	defined(CONFIG_BOARD_MIKROE_CLICKER_2)
 #define ADC_DEVICE_NAME         DT_LABEL(DT_INST(0, st_stm32_adc))
 #define ADC_RESOLUTION		10
 #define ADC_GAIN		ADC_GAIN_1
@@ -181,13 +190,21 @@
 #define ADC_ACQUISITION_TIME	ADC_ACQ_TIME_DEFAULT
 #define ADC_1ST_CHANNEL_ID	1
 
+#elif defined(CONFIG_BOARD_DISCO_L475_IOT1)
+#define ADC_DEVICE_NAME         DT_LABEL(DT_INST(0, st_stm32_adc))
+#define ADC_RESOLUTION		10
+#define ADC_GAIN		ADC_GAIN_1
+#define ADC_REFERENCE		ADC_REF_INTERNAL
+#define ADC_ACQUISITION_TIME	ADC_ACQ_TIME_DEFAULT
+#define ADC_1ST_CHANNEL_ID	5
+
 #elif defined(CONFIG_BOARD_NUCLEO_H743ZI)
 #define ADC_DEVICE_NAME         DT_LABEL(DT_INST(0, st_stm32_adc))
 #define ADC_RESOLUTION		16
 #define ADC_GAIN		ADC_GAIN_1
 #define ADC_REFERENCE		ADC_REF_INTERNAL
 #define ADC_ACQUISITION_TIME	ADC_ACQ_TIME_DEFAULT
-#define ADC_1ST_CHANNEL_ID	0
+#define ADC_1ST_CHANNEL_ID	15
 
 #elif defined(CONFIG_BOARD_TWR_KE18F)
 #define ADC_DEVICE_NAME		DT_LABEL(DT_INST(0, nxp_kinetis_adc12))
@@ -208,8 +225,35 @@
 #define ADC_1ST_CHANNEL_ID	4
 #define ADC_2ND_CHANNEL_ID	5
 
+#elif defined(CONFIG_BOARD_LPCXPRESSO55S69_CPU0) || \
+	defined(CONFIG_BOARD_LPCXPRESSO55S28)
+#define ADC_DEVICE_NAME		DT_LABEL(DT_INST(0, nxp_lpc_lpadc))
+#define ADC_RESOLUTION		12
+#define ADC_GAIN		ADC_GAIN_1
+#define ADC_REFERENCE		ADC_REF_EXTERNAL0
+#define ADC_ACQUISITION_TIME	ADC_ACQ_TIME_DEFAULT
+#define ADC_1ST_CHANNEL_ID	0
+#define ADC_2ND_CHANNEL_ID	1
+
+#elif defined(CONFIG_BOARD_NPCX7M6FB_EVB)
+#define ADC_DEVICE_NAME		DT_LABEL(DT_INST(0, nuvoton_npcx_adc))
+#define ADC_RESOLUTION		10
+#define ADC_GAIN		ADC_GAIN_1
+#define ADC_REFERENCE		ADC_REF_INTERNAL
+#define ADC_ACQUISITION_TIME	ADC_ACQ_TIME_DEFAULT
+#define ADC_1ST_CHANNEL_ID	0
+#define ADC_2ND_CHANNEL_ID	2
+
 #else
 #error "Unsupported board."
+#endif
+
+/* Invalid value that is not supposed to be written by the driver. It is used
+ * to mark the sample buffer entries as empty. If needed, it can be overriden
+ * for a particular board by providing a specific definition above.
+ */
+#if !defined(INVALID_ADC_VALUE)
+#define INVALID_ADC_VALUE SHRT_MIN
 #endif
 
 #define BUFFER_SIZE  6
@@ -243,7 +287,7 @@ const struct device *get_adc_device(void)
 
 static const struct device *init_adc(void)
 {
-	int ret;
+	int i, ret;
 	const struct device *adc_dev = device_get_binding(ADC_DEVICE_NAME);
 
 	zassert_not_null(adc_dev, "Cannot get ADC device");
@@ -258,7 +302,9 @@ static const struct device *init_adc(void)
 		"Setting up of the second channel failed with code %d", ret);
 #endif /* defined(ADC_2ND_CHANNEL_ID) */
 
-	(void)memset(m_sample_buffer, 0, sizeof(m_sample_buffer));
+	for (i = 0; i < BUFFER_SIZE; ++i) {
+		m_sample_buffer[i] = INVALID_ADC_VALUE;
+	}
 
 	return adc_dev;
 }
@@ -273,11 +319,11 @@ static void check_samples(int expected_count)
 
 		TC_PRINT("0x%04x ", sample_value);
 		if (i < expected_count) {
-			zassert_not_equal(0, sample_value,
-				"[%u] should be non-zero", i);
+			zassert_not_equal(INVALID_ADC_VALUE, sample_value,
+				"[%u] should be filled", i);
 		} else {
-			zassert_equal(0, sample_value,
-				"[%u] should be zero", i);
+			zassert_equal(INVALID_ADC_VALUE, sample_value,
+				"[%u] should be empty", i);
 		}
 	}
 	TC_PRINT("\n");
@@ -409,10 +455,18 @@ void test_adc_asynchronous_call(void)
 /*
  * test_adc_sample_with_interval
  */
+static uint32_t my_sequence_identifier = 0x12345678;
+static void *user_data = &my_sequence_identifier;
+
 static enum adc_action sample_with_interval_callback(const struct device *dev,
 						     const struct adc_sequence *sequence,
 						     uint16_t sampling_index)
 {
+	if (sequence->options->user_data != &my_sequence_identifier) {
+		user_data = sequence->options->user_data;
+		return ADC_ACTION_FINISH;
+	}
+
 	TC_PRINT("%s: sampling %d\n", __func__, sampling_index);
 	return ADC_ACTION_CONTINUE;
 }
@@ -423,6 +477,7 @@ static int test_task_with_interval(void)
 	const struct adc_sequence_options options = {
 		.interval_us     = 100 * 1000UL,
 		.callback        = sample_with_interval_callback,
+		.user_data       = user_data,
 		.extra_samplings = 4,
 	};
 	const struct adc_sequence sequence = {
@@ -441,6 +496,10 @@ static int test_task_with_interval(void)
 
 	ret = adc_read(adc_dev, &sequence);
 	zassert_equal(ret, 0, "adc_read() failed with code %d", ret);
+
+	zassert_equal(user_data, sequence.options->user_data,
+		"Invalid user data: %p, expected: %p",
+		user_data, sequence.options->user_data);
 
 	check_samples(1 + options.extra_samplings);
 

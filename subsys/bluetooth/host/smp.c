@@ -119,6 +119,7 @@ enum {
 	SMP_FLAG_SC,		/* if LE Secure Connections is used */
 	SMP_FLAG_PKEY_SEND,	/* if should send Public Key when available */
 	SMP_FLAG_DHKEY_PENDING,	/* if waiting for local DHKey */
+	SMP_FLAG_DHKEY_GEN,     /* if generating DHKey */
 	SMP_FLAG_DHKEY_SEND,	/* if should generate and send DHKey Check */
 	SMP_FLAG_USER,		/* if waiting for user input */
 	SMP_FLAG_DISPLAY,       /* if display_passkey() callback was called */
@@ -278,6 +279,21 @@ static bool oobd_present;
 static bool sc_supported;
 static const uint8_t *sc_public_key;
 static K_SEM_DEFINE(sc_local_pkey_ready, 0, 1);
+
+static bool le_sc_supported(void)
+{
+	/*
+	 * If controller based ECC is to be used it must support
+	 * "LE Read Local P-256 Public Key" and "LE Generate DH Key" commands.
+	 * Otherwise LE SC are not supported.
+	 */
+	if (IS_ENABLED(CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY)) {
+		return false;
+	}
+
+	return BT_CMD_TEST(bt_dev.supported_commands, 34, 1) &&
+	       BT_CMD_TEST(bt_dev.supported_commands, 34, 2);
+}
 
 static uint8_t get_io_capa(void)
 {
@@ -1091,7 +1107,7 @@ static void smp_br_derive_ltk(struct bt_smp_br *smp)
 
 	keys = bt_keys_get_type(BT_KEYS_LTK_P256, conn->id, &addr);
 	if (!keys) {
-		BT_ERR("No keys space for %s", bt_addr_le_str(&addr));
+		BT_ERR("Unable to get keys for %s", bt_addr_le_str(&addr));
 		return;
 	}
 
@@ -1235,7 +1251,10 @@ static void smp_br_distribute_keys(struct bt_smp_br *smp)
 
 		info = net_buf_add(buf, sizeof(*info));
 
-		bt_rand(info->csrk, sizeof(info->csrk));
+		if (bt_rand(info->csrk, sizeof(info->csrk))) {
+			BT_ERR("Unable to get random bytes");
+			return;
+		}
 
 		if (atomic_test_bit(smp->flags, SMP_FLAG_BOND)) {
 			bt_keys_add_type(keys, BT_KEYS_LOCAL_CSRK);
@@ -1286,6 +1305,7 @@ static uint8_t smp_br_pairing_req(struct bt_smp_br *smp, struct net_buf *buf)
 
 	max_key_size = bt_conn_enc_key_size(conn);
 	if (!max_key_size) {
+		BT_DBG("Invalid encryption key size");
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
@@ -1358,6 +1378,7 @@ static uint8_t smp_br_pairing_rsp(struct bt_smp_br *smp, struct net_buf *buf)
 
 	max_key_size = bt_conn_enc_key_size(conn);
 	if (!max_key_size) {
+		BT_DBG("Invalid encryption key size");
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
@@ -1724,6 +1745,7 @@ int bt_smp_br_send_pairing_req(struct bt_conn *conn)
 
 	max_key_size = bt_conn_enc_key_size(conn);
 	if (!max_key_size) {
+		BT_DBG("Invalid encryption key size");
 		return -EIO;
 	}
 
@@ -1988,6 +2010,7 @@ static uint8_t smp_send_pairing_confirm(struct bt_smp *smp)
 		r |= 0x80;
 		break;
 	default:
+		BT_ERR("Unknown pairing method (%u)", smp->method);
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
@@ -2032,7 +2055,10 @@ static void legacy_distribute_keys(struct bt_smp *smp)
 			uint8_t ediv[2];
 		} rand;
 
-		bt_rand((void *)&rand, sizeof(rand));
+		if (bt_rand((void *)&rand, sizeof(rand))) {
+			BT_ERR("Unable to get random bytes");
+			return;
+		}
 
 		buf = smp_create_pdu(smp, BT_SMP_CMD_ENCRYPT_INFO,
 				     sizeof(*info));
@@ -2142,7 +2168,9 @@ static uint8_t bt_smp_distribute_keys(struct bt_smp *smp)
 
 		info = net_buf_add(buf, sizeof(*info));
 
-		bt_rand(info->csrk, sizeof(info->csrk));
+		if (bt_rand(info->csrk, sizeof(info->csrk))) {
+			return BT_SMP_ERR_UNSPECIFIED;
+		}
 
 		if (atomic_test_bit(smp->flags, SMP_FLAG_BOND)) {
 			bt_keys_add_type(keys, BT_KEYS_LOCAL_CSRK);
@@ -2362,12 +2390,12 @@ static uint8_t legacy_pairing_req(struct bt_smp *smp)
 		return 0;
 	}
 
+	atomic_set_bit(&smp->allowed_cmds, BT_SMP_CMD_PAIRING_CONFIRM);
 	ret = send_pairing_rsp(smp);
 	if (ret) {
 		return ret;
 	}
 
-	atomic_set_bit(&smp->allowed_cmds, BT_SMP_CMD_PAIRING_CONFIRM);
 
 	return legacy_request_tk(smp);
 }
@@ -2435,6 +2463,7 @@ static uint8_t legacy_pairing_random(struct bt_smp *smp)
 	if (IS_ENABLED(CONFIG_BT_PERIPHERAL)) {
 		err = smp_s1(smp->tk, smp->prnd, smp->rrnd, tmp);
 		if (err) {
+			BT_ERR("Calculate STK failed");
 			return BT_SMP_ERR_UNSPECIFIED;
 		}
 
@@ -2596,6 +2625,7 @@ static uint8_t legacy_pairing_rsp(struct bt_smp *smp)
 
 	if (!atomic_test_bit(smp->flags, SMP_FLAG_USER)) {
 		atomic_set_bit(&smp->allowed_cmds, BT_SMP_CMD_PAIRING_CONFIRM);
+		atomic_set_bit(&smp->allowed_cmds, BT_SMP_KEYPRESS_NOTIFICATION);
 		return legacy_send_pairing_confirm(smp);
 	}
 
@@ -2864,6 +2894,8 @@ static uint8_t smp_pairing_req(struct bt_smp *smp, struct net_buf *buf)
 	if (!conn->le.keys) {
 		conn->le.keys = bt_keys_get_addr(conn->id, &conn->le.dst);
 		if (!conn->le.keys) {
+			BT_DBG("Unable to get keys for %s",
+			       bt_addr_le_str(&conn->le.dst));
 			return BT_SMP_ERR_UNSPECIFIED;
 		}
 	}
@@ -2916,6 +2948,7 @@ static uint8_t smp_pairing_req(struct bt_smp *smp, struct net_buf *buf)
 		atomic_set_bit(smp->flags, SMP_FLAG_BOND);
 	} else if (IS_ENABLED(CONFIG_BT_BONDING_REQUIRED)) {
 		/* Reject pairing req if not both intend to bond */
+		BT_DBG("Bonding required");
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
@@ -3119,6 +3152,7 @@ static uint8_t smp_pairing_rsp(struct bt_smp *smp, struct net_buf *buf)
 		atomic_set_bit(smp->flags, SMP_FLAG_BOND);
 	} else if (IS_ENABLED(CONFIG_BT_BONDING_REQUIRED)) {
 		/* Reject pairing req if not both intend to bond */
+		BT_DBG("Bonding required");
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
@@ -3236,6 +3270,7 @@ static uint8_t smp_pairing_confirm(struct bt_smp *smp, struct net_buf *buf)
 	case JUST_WORKS:
 	case PASSKEY_CONFIRM:
 	default:
+		BT_ERR("Unknown pairing method (%u)", smp->method);
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 }
@@ -3281,6 +3316,7 @@ static uint8_t compute_and_send_master_dhcheck(struct bt_smp *smp)
 		}
 		break;
 	default:
+		BT_ERR("Unknown pairing method (%u)", smp->method);
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
@@ -3289,12 +3325,14 @@ static uint8_t compute_and_send_master_dhcheck(struct bt_smp *smp)
 		   &smp->chan.chan.conn->le.init_addr,
 		   &smp->chan.chan.conn->le.resp_addr, smp->mackey,
 		   smp->tk)) {
+		BT_ERR("Calculate LTK failed");
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 	/* calculate local DHKey check */
 	if (smp_f6(smp->mackey, smp->prnd, smp->rrnd, r, &smp->preq[1],
 		   &smp->chan.chan.conn->le.init_addr,
 		   &smp->chan.chan.conn->le.resp_addr, e)) {
+		BT_ERR("Calculate local DHKey check failed");
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
@@ -3325,6 +3363,7 @@ static uint8_t compute_and_check_and_send_slave_dhcheck(struct bt_smp *smp)
 		}
 		break;
 	default:
+		BT_ERR("Unknown pairing method (%u)", smp->method);
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
@@ -3333,6 +3372,7 @@ static uint8_t compute_and_check_and_send_slave_dhcheck(struct bt_smp *smp)
 		   &smp->chan.chan.conn->le.init_addr,
 		   &smp->chan.chan.conn->le.resp_addr, smp->mackey,
 		   smp->tk)) {
+		BT_ERR("Calculate LTK failed");
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
@@ -3340,6 +3380,7 @@ static uint8_t compute_and_check_and_send_slave_dhcheck(struct bt_smp *smp)
 	if (smp_f6(smp->mackey, smp->prnd, smp->rrnd, r, &smp->prsp[1],
 		   &smp->chan.chan.conn->le.resp_addr,
 		   &smp->chan.chan.conn->le.init_addr, e)) {
+		BT_ERR("Calculate local DHKey check failed");
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
@@ -3355,6 +3396,7 @@ static uint8_t compute_and_check_and_send_slave_dhcheck(struct bt_smp *smp)
 	if (smp_f6(smp->mackey, smp->rrnd, smp->prnd, r, &smp->preq[1],
 		   &smp->chan.chan.conn->le.init_addr,
 		   &smp->chan.chan.conn->le.resp_addr, re)) {
+		BT_ERR("Calculate remote DHKey check failed");
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
@@ -3374,65 +3416,95 @@ static uint8_t compute_and_check_and_send_slave_dhcheck(struct bt_smp *smp)
 }
 #endif /* CONFIG_BT_PERIPHERAL */
 
-static void bt_smp_dhkey_ready(const uint8_t *dhkey)
+static void bt_smp_dhkey_ready(const uint8_t *dhkey);
+static uint8_t smp_dhkey_generate(struct bt_smp *smp)
 {
-	struct bt_smp *smp = NULL;
-	int i;
+	int err;
 
-	BT_DBG("%p", dhkey);
+	atomic_set_bit(smp->flags, SMP_FLAG_DHKEY_GEN);
+	err = bt_dh_key_gen(smp->pkey, bt_smp_dhkey_ready);
+	if (err) {
+		atomic_clear_bit(smp->flags, SMP_FLAG_DHKEY_GEN);
 
-	for (i = 0; i < ARRAY_SIZE(bt_smp_pool); i++) {
-		if (atomic_test_and_clear_bit(bt_smp_pool[i].flags,
-					      SMP_FLAG_DHKEY_PENDING)) {
-			smp = &bt_smp_pool[i];
-			break;
-		}
+		BT_ERR("Failed to generate DHKey");
+		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
-	if (!smp) {
-		return;
-	}
+	return 0;
+}
 
+static uint8_t smp_dhkey_ready(struct bt_smp *smp, const uint8_t *dhkey)
+{
 	if (!dhkey) {
-		smp_error(smp, BT_SMP_ERR_DHKEY_CHECK_FAILED);
-		return;
+		return BT_SMP_ERR_DHKEY_CHECK_FAILED;
 	}
 
+	atomic_clear_bit(smp->flags, SMP_FLAG_DHKEY_PENDING);
 	memcpy(smp->dhkey, dhkey, 32);
 
 	/* wait for user passkey confirmation */
 	if (atomic_test_bit(smp->flags, SMP_FLAG_USER)) {
 		atomic_set_bit(smp->flags, SMP_FLAG_DHKEY_SEND);
-		return;
+		return 0;
 	}
 
 	/* wait for remote DHKey Check */
 	if (atomic_test_bit(smp->flags, SMP_FLAG_DHCHECK_WAIT)) {
 		atomic_set_bit(smp->flags, SMP_FLAG_DHKEY_SEND);
-		return;
+		return 0;
 	}
 
 	if (atomic_test_bit(smp->flags, SMP_FLAG_DHKEY_SEND)) {
-		uint8_t err;
-
 #if defined(CONFIG_BT_CENTRAL)
 		if (smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
-			err = compute_and_send_master_dhcheck(smp);
-			if (err) {
-				smp_error(smp, err);
-			}
-
-			return;
+			return compute_and_send_master_dhcheck(smp);
 		}
+
 #endif /* CONFIG_BT_CENTRAL */
 
 #if defined(CONFIG_BT_PERIPHERAL)
-		err = compute_and_check_and_send_slave_dhcheck(smp);
+		return  compute_and_check_and_send_slave_dhcheck(smp);
+#endif /* CONFIG_BT_PERIPHERAL */
+	}
+
+	return 0;
+}
+
+static struct bt_smp *smp_find(int flag)
+{
+	for (int i = 0; i < ARRAY_SIZE(bt_smp_pool); i++) {
+		if (atomic_test_bit(bt_smp_pool[i].flags, flag)) {
+			return &bt_smp_pool[i];
+		}
+	}
+
+	return NULL;
+}
+
+static void bt_smp_dhkey_ready(const uint8_t *dhkey)
+{
+	BT_DBG("%p", dhkey);
+	int err;
+
+	struct bt_smp *smp = smp_find(SMP_FLAG_DHKEY_GEN);
+	if (smp) {
+		atomic_clear_bit(smp->flags, SMP_FLAG_DHKEY_GEN);
+		err = smp_dhkey_ready(smp, dhkey);
 		if (err) {
 			smp_error(smp, err);
 		}
-#endif /* CONFIG_BT_PERIPHERAL */
 	}
+
+	err = 0;
+	do {
+		smp = smp_find(SMP_FLAG_DHKEY_PENDING);
+		if (smp) {
+			err = smp_dhkey_generate(smp);
+			if (err) {
+				smp_error(smp, err);
+			}
+		}
+	} while (smp && err);
 }
 
 static uint8_t sc_smp_check_confirm(struct bt_smp *smp)
@@ -3460,10 +3532,12 @@ static uint8_t sc_smp_check_confirm(struct bt_smp *smp)
 		r |= 0x80;
 		break;
 	default:
+		BT_ERR("Unknown pairing method (%u)", smp->method);
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
 	if (smp_f4(smp->pkey, sc_public_key, smp->rrnd, r, cfm)) {
+		BT_ERR("Calculate confirm failed");
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
@@ -3576,6 +3650,7 @@ static uint8_t smp_pairing_random(struct bt_smp *smp, struct net_buf *buf)
 				       BT_SMP_CMD_PAIRING_CONFIRM);
 			return smp_send_pairing_confirm(smp);
 		default:
+			BT_ERR("Unknown pairing method (%u)", smp->method);
 			return BT_SMP_ERR_UNSPECIFIED;
 		}
 
@@ -3653,6 +3728,7 @@ static uint8_t smp_pairing_random(struct bt_smp *smp, struct net_buf *buf)
 			return BT_SMP_ERR_OOB_NOT_AVAIL;
 		}
 	default:
+		BT_ERR("Unknown pairing method (%u)", smp->method);
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
@@ -3869,6 +3945,7 @@ static uint8_t smp_security_request(struct bt_smp *smp, struct net_buf *buf)
 	if (IS_ENABLED(CONFIG_BT_BONDING_REQUIRED) &&
 	    !(bondable && (auth & BT_SMP_AUTH_BONDING))) {
 		/* Reject security req if not both intend to bond */
+		BT_DBG("Bonding required");
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
@@ -3915,6 +3992,7 @@ static uint8_t smp_security_request(struct bt_smp *smp, struct net_buf *buf)
 					conn->le.keys->ltk.ediv,
 					conn->le.keys->ltk.val,
 					conn->le.keys->enc_size) < 0) {
+		BT_ERR("Failed to start encryption");
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
@@ -3943,11 +4021,11 @@ static uint8_t generate_dhkey(struct bt_smp *smp)
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
-	if (bt_dh_key_gen(smp->pkey, bt_smp_dhkey_ready)) {
-		return BT_SMP_ERR_UNSPECIFIED;
+	atomic_set_bit(smp->flags, SMP_FLAG_DHKEY_PENDING);
+	if (!smp_find(SMP_FLAG_DHKEY_GEN)) {
+		return smp_dhkey_generate(smp);
 	}
 
-	atomic_set_bit(smp->flags, SMP_FLAG_DHKEY_PENDING);
 	return 0;
 }
 
@@ -4013,6 +4091,7 @@ static uint8_t smp_public_key_slave(struct bt_smp *smp)
 		atomic_set_bit(&smp->allowed_cmds, BT_SMP_CMD_PAIRING_RANDOM);
 		break;
 	default:
+		BT_ERR("Unknown pairing method (%u)", smp->method);
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
 
@@ -4060,6 +4139,9 @@ static uint8_t smp_public_key(struct bt_smp *smp, struct net_buf *buf)
 			atomic_set_bit(&smp->allowed_cmds,
 				       BT_SMP_CMD_PAIRING_CONFIRM);
 
+			atomic_set_bit(&smp->allowed_cmds,
+				       BT_SMP_KEYPRESS_NOTIFICATION);
+
 			err = smp_send_pairing_confirm(smp);
 			if (err) {
 				return err;
@@ -4068,6 +4150,10 @@ static uint8_t smp_public_key(struct bt_smp *smp, struct net_buf *buf)
 		case PASSKEY_INPUT:
 			atomic_set_bit(smp->flags, SMP_FLAG_USER);
 			bt_auth->passkey_entry(smp->chan.chan.conn);
+
+			atomic_set_bit(&smp->allowed_cmds,
+				       BT_SMP_KEYPRESS_NOTIFICATION);
+
 			break;
 		case LE_SC_OOB:
 			/* Step 6: Select random N */
@@ -4095,6 +4181,7 @@ static uint8_t smp_public_key(struct bt_smp *smp, struct net_buf *buf)
 			}
 			break;
 		default:
+			BT_ERR("Unknown pairing method (%u)", smp->method);
 			return BT_SMP_ERR_UNSPECIFIED;
 		}
 
@@ -4143,6 +4230,7 @@ static uint8_t smp_dhkey_check(struct bt_smp *smp, struct net_buf *buf)
 			}
 			break;
 		default:
+			BT_ERR("Unknown pairing method (%u)", smp->method);
 			return BT_SMP_ERR_UNSPECIFIED;
 		}
 
@@ -4164,6 +4252,7 @@ static uint8_t smp_dhkey_check(struct bt_smp *smp, struct net_buf *buf)
 		(void)memset(rand, 0, sizeof(rand));
 		if (bt_conn_le_start_encryption(smp->chan.chan.conn, rand, ediv,
 						smp->tk, enc_size) < 0) {
+			BT_ERR("Failed to start encryption");
 			return BT_SMP_ERR_UNSPECIFIED;
 		}
 
@@ -4206,6 +4295,18 @@ static uint8_t smp_dhkey_check(struct bt_smp *smp, struct net_buf *buf)
 	return 0;
 }
 
+static uint8_t smp_keypress_notif(struct bt_smp *smp, struct net_buf *buf)
+{
+	ARG_UNUSED(smp);
+	ARG_UNUSED(buf);
+
+	BT_DBG("");
+
+	/* Ignore packets until keypress notifications are fully supported. */
+	atomic_set_bit(&smp->allowed_cmds, BT_SMP_KEYPRESS_NOTIFICATION);
+	return 0;
+}
+
 static const struct {
 	uint8_t  (*func)(struct bt_smp *smp, struct net_buf *buf);
 	uint8_t  expect_len;
@@ -4224,6 +4325,7 @@ static const struct {
 	{ smp_security_request,    sizeof(struct bt_smp_security_request) },
 	{ smp_public_key,          sizeof(struct bt_smp_public_key) },
 	{ smp_dhkey_check,         sizeof(struct bt_smp_dhkey_check) },
+	{ smp_keypress_notif,      sizeof(struct bt_smp_keypress_notif) },
 };
 
 static int bt_smp_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
@@ -4251,7 +4353,17 @@ static int bt_smp_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
 		return 0;
 	}
 
-	if (hdr->code >= ARRAY_SIZE(handlers) || !handlers[hdr->code].func) {
+	/*
+	 * Bluetooth Core Specification Version 5.2, Vol 3, Part H, page 1667:
+	 * If a packet is received with a Code that is reserved for future use
+	 * it shall be ignored.
+	 */
+	if (hdr->code >= ARRAY_SIZE(handlers)) {
+		BT_WARN("Received reserved SMP code 0x%02x", hdr->code);
+		return 0;
+	}
+
+	if (!handlers[hdr->code].func) {
 		BT_WARN("Unhandled SMP code 0x%02x", hdr->code);
 		smp_error(smp, BT_SMP_ERR_CMD_NOTSUPP);
 		return 0;
@@ -5020,23 +5132,23 @@ int bt_smp_auth_passkey_entry(struct bt_conn *conn, unsigned int passkey)
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
 	    smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
+		atomic_set_bit(&smp->allowed_cmds, BT_SMP_CMD_PAIRING_CONFIRM);
 		err = smp_send_pairing_confirm(smp);
 		if (err) {
 			smp_error(smp, BT_SMP_ERR_PASSKEY_ENTRY_FAILED);
 			return 0;
 		}
-		atomic_set_bit(&smp->allowed_cmds, BT_SMP_CMD_PAIRING_CONFIRM);
 		return 0;
 	}
 
 	if (IS_ENABLED(CONFIG_BT_PERIPHERAL) &&
 	    atomic_test_bit(smp->flags, SMP_FLAG_CFM_DELAYED)) {
+		atomic_set_bit(&smp->allowed_cmds, BT_SMP_CMD_PAIRING_RANDOM);
 		err = smp_send_pairing_confirm(smp);
 		if (err) {
 			smp_error(smp, BT_SMP_ERR_PASSKEY_ENTRY_FAILED);
 			return 0;
 		}
-		atomic_set_bit(&smp->allowed_cmds, BT_SMP_CMD_PAIRING_RANDOM);
 	}
 
 	return 0;
@@ -5115,10 +5227,13 @@ int bt_smp_le_oob_set_tk(struct bt_conn *conn, const uint8_t *tk)
 }
 #endif /* !defined(CONFIG_BT_SMP_SC_PAIR_ONLY) */
 
-#if !defined(CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY)
 int bt_smp_le_oob_generate_sc_data(struct bt_le_oob_sc_data *le_sc_oob)
 {
 	int err;
+
+	if (!le_sc_supported()) {
+		return -ENOTSUP;
+	}
 
 	if (!sc_public_key) {
 		err = k_sem_take(&sc_local_pkey_ready, K_FOREVER);
@@ -5149,7 +5264,6 @@ int bt_smp_le_oob_generate_sc_data(struct bt_le_oob_sc_data *le_sc_oob)
 
 	return 0;
 }
-#endif /* !defined(CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY) */
 
 #if !defined(CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY)
 static bool le_sc_oob_data_check(struct bt_smp *smp, bool oobd_local_present,
@@ -5270,6 +5384,8 @@ int bt_smp_auth_cancel(struct bt_conn *conn)
 		return -EINVAL;
 	}
 
+	BT_DBG("");
+
 	switch (smp->method) {
 	case PASSKEY_INPUT:
 	case PASSKEY_DISPLAY:
@@ -5282,6 +5398,7 @@ int bt_smp_auth_cancel(struct bt_conn *conn)
 	case JUST_WORKS:
 		return smp_error(smp, BT_SMP_ERR_UNSPECIFIED);
 	default:
+		BT_ERR("Unknown pairing method (%u)", smp->method);
 		return 0;
 	}
 }
@@ -5516,21 +5633,6 @@ static int bt_smp_accept(struct bt_conn *conn, struct bt_l2cap_chan **chan)
 	BT_ERR("No available SMP context for conn %p", conn);
 
 	return -ENOMEM;
-}
-
-static bool le_sc_supported(void)
-{
-	/*
-	 * If controller based ECC is to be used it must support
-	 * "LE Read Local P-256 Public Key" and "LE Generate DH Key" commands.
-	 * Otherwise LE SC are not supported.
-	 */
-	if (IS_ENABLED(CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY)) {
-		return false;
-	}
-
-	return BT_CMD_TEST(bt_dev.supported_commands, 34, 1) &&
-	       BT_CMD_TEST(bt_dev.supported_commands, 34, 2);
 }
 
 BT_L2CAP_CHANNEL_DEFINE(smp_fixed_chan, BT_L2CAP_CID_SMP, bt_smp_accept, NULL);

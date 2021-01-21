@@ -9,7 +9,7 @@
 #include <string.h>
 #include <device.h>
 #include <drivers/i2c.h>
-#include <assert.h>
+#include <sys/__assert.h>
 #include <crypto/cipher.h>
 
 #include "crypto_ataes132a_priv.h"
@@ -675,7 +675,7 @@ static int do_ccm_encrypt_mac(struct cipher_ctx *ctx,
 
 	key_id = state->key_id;
 
-	assert(*(uint8_t *)ctx->key.handle == key_id);
+	__ASSERT_NO_MSG(*(uint8_t *)ctx->key.handle == key_id);
 
 	/* Removing all this salt from the MAC reduces the protection
 	 * but allows any other crypto implementations to authorize
@@ -724,7 +724,7 @@ static int do_ccm_decrypt_auth(struct cipher_ctx *ctx,
 
 	key_id = state->key_id;
 
-	assert(*(uint8_t *)ctx->key.handle == key_id);
+	__ASSERT_NO_MSG(*(uint8_t *)ctx->key.handle == key_id);
 
 	/* Removing all this salt from the MAC reduces the protection
 	 * but allows any other crypto implementations to authorize
@@ -768,7 +768,7 @@ static int do_block(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 
 	key_id = state->key_id;
 
-	assert(*(uint8_t *)ctx->key.handle == key_id);
+	__ASSERT_NO_MSG(*(uint8_t *)ctx->key.handle == key_id);
 
 	if (pkt->out_buf_max < 16) {
 		LOG_ERR("Not enough space available in out buffer.");
@@ -898,6 +898,7 @@ static struct crypto_driver_api crypto_enc_funcs = {
 
 struct ataes132a_device_data ataes132a_data;
 
-DEVICE_AND_API_INIT(ataes132a, CONFIG_CRYPTO_ATAES132A_DRV_NAME, ataes132a_init,
-		    &ataes132a_data, &ataes132a_config, POST_KERNEL,
-		    CONFIG_CRYPTO_INIT_PRIORITY, (void *)&crypto_enc_funcs);
+DEVICE_DEFINE(ataes132a, CONFIG_CRYPTO_ATAES132A_DRV_NAME, ataes132a_init,
+		device_pm_control_nop, &ataes132a_data, &ataes132a_config,
+		POST_KERNEL, CONFIG_CRYPTO_INIT_PRIORITY,
+		(void *)&crypto_enc_funcs);

@@ -9,7 +9,7 @@
 #include <sys/byteorder.h>
 #include <soc.h>
 #include <sys/util.h>
-#include <assert.h>
+#include <sys/__assert.h>
 #include "i2s_litex.h"
 #include <logging/log.h>
 
@@ -125,7 +125,7 @@ static uint32_t i2s_get_audio_freq(uintptr_t reg)
  */
 static void i2s_irq_enable(uintptr_t reg, int irq_type)
 {
-	assert(irq_type == I2S_EV_READY || irq_type == I2S_EV_ERROR);
+	__ASSERT_NO_MSG(irq_type == I2S_EV_READY || irq_type == I2S_EV_ERROR);
 
 	uint8_t reg_data = litex_read8(reg + I2S_EV_ENABLE_REG_OFFSET);
 
@@ -142,7 +142,7 @@ static void i2s_irq_enable(uintptr_t reg, int irq_type)
  */
 static void i2s_irq_disable(uintptr_t reg, int irq_type)
 {
-	assert(irq_type == I2S_EV_READY || irq_type == I2S_EV_ERROR);
+	__ASSERT_NO_MSG(irq_type == I2S_EV_READY || irq_type == I2S_EV_ERROR);
 
 	uint8_t reg_data = litex_read8(reg + I2S_EV_ENABLE_REG_OFFSET);
 
@@ -624,8 +624,8 @@ static const struct i2s_driver_api i2s_litex_driver_api = {
 		.fifo_depth = DT_PROP(DT_NODELABEL(i2s_##dir), fifo_depth),    \
 		.irq_config = i2s_litex_irq_config_func_##dir                  \
 	};                                                                     \
-	DEVICE_AND_API_INIT(i2s_##dir, DT_LABEL(DT_NODELABEL(i2s_##dir)),      \
-				i2s_litex_initialize, &i2s_litex_data_##dir,   \
+	DEVICE_DT_DEFINE(DT_NODELABEL(i2s_##dir), i2s_litex_initialize,        \
+				device_pm_control_nop, &i2s_litex_data_##dir,  \
 				&i2s_litex_cfg_##dir, POST_KERNEL,             \
 				CONFIG_I2S_INIT_PRIORITY,		       \
 				&i2s_litex_driver_api);			       \
@@ -636,7 +636,7 @@ static const struct i2s_driver_api i2s_litex_driver_api = {
 					DT_IRQ(DT_NODELABEL(i2s_##dir),	       \
 						priority),		       \
 					i2s_litex_isr_##dir,		       \
-					DEVICE_GET(i2s_##dir), 0);	       \
+					DEVICE_DT_GET(DT_NODELABEL(i2s_##dir)), 0);\
 		irq_enable(DT_IRQN(DT_NODELABEL(i2s_##dir)));                  \
 	}
 

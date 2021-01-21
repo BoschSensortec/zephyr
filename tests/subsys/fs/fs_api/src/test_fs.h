@@ -10,6 +10,7 @@
 #include <zephyr.h>
 #include <ztest.h>
 #include <fs/fs.h>
+#include <fs/fs_sys.h>
 
 #define TEST_FS_MNTP	"/NAND:"
 #define TEST_FILE	TEST_FS_MNTP"/testfile.txt"
@@ -41,6 +42,7 @@ void test_lsdir(void);
 void test_file_open(void);
 void test_file_write(void);
 void test_file_read(void);
+void test_file_seek(void);
 void test_file_truncate(void);
 void test_file_close(void);
 void test_file_sync(void);
@@ -48,4 +50,5 @@ void test_file_rename(void);
 void test_file_stat(void);
 void test_file_unlink(void);
 void test_unmount(void);
+void test_mount_flags(void);
 #endif

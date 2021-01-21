@@ -43,6 +43,8 @@
 #define _CCM_BSS_SECTION_NAME		.ccm_bss
 #define _CCM_NOINIT_SECTION_NAME	.ccm_noinit
 
+#define _ITCM_SECTION_NAME		.itcm
+
 #define _DTCM_DATA_SECTION_NAME	.dtcm_data
 #define _DTCM_BSS_SECTION_NAME		.dtcm_bss
 #define _DTCM_NOINIT_SECTION_NAME	.dtcm_noinit
@@ -52,6 +54,9 @@
 #define _IMX_BOOT_DATA_SECTION_NAME	.boot_hdr.data
 #define _IMX_BOOT_IVT_SECTION_NAME	.boot_hdr.ivt
 #define _IMX_BOOT_DCD_SECTION_NAME	.boot_hdr.dcd_data
+
+#define _STM32_SDRAM1_SECTION_NAME	.stm32_sdram1
+#define _STM32_SDRAM2_SECTION_NAME	.stm32_sdram2
 
 #ifdef CONFIG_NOCACHE_MEMORY
 #define _NOCACHE_SECTION_NAME nocache

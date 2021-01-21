@@ -165,6 +165,7 @@ void test_timer_duration_period(void)
 {
 	init_timer_data();
 	/** TESTPOINT: init timer via k_timer_init */
+	k_usleep(1); /* align to tick */
 	k_timer_start(&duration_timer, K_MSEC(DURATION), K_MSEC(PERIOD));
 	tdata.timestamp = k_uptime_get();
 	busy_wait_ms(DURATION + PERIOD * EXPIRE_TIMES + PERIOD / 2);
@@ -172,6 +173,8 @@ void test_timer_duration_period(void)
 	TIMER_ASSERT(tdata.expire_cnt == EXPIRE_TIMES, &duration_timer);
 	TIMER_ASSERT(tdata.stop_cnt == 1, &duration_timer);
 
+	k_timer_start(&duration_timer, K_FOREVER, K_MSEC(PERIOD));
+	TIMER_ASSERT(tdata.stop_cnt == 1, &duration_timer);
 	/* cleanup environemtn */
 	k_timer_stop(&duration_timer);
 }
@@ -451,8 +454,13 @@ void test_timer_status_sync(void)
 		TIMER_ASSERT(tdata.expire_cnt == (i + 1), &status_sync_timer);
 	}
 
+	k_timer_start(&status_sync_timer, K_MSEC(DURATION), K_MSEC(PERIOD));
+	busy_wait_ms(PERIOD*2);
+	zassert_true(k_timer_status_sync(&status_sync_timer), NULL);
+
 	/* cleanup environment */
 	k_timer_stop(&status_sync_timer);
+	zassert_false(k_timer_status_sync(&status_sync_timer), NULL);
 }
 
 /**
@@ -474,6 +482,7 @@ void test_timer_k_define(void)
 {
 	init_timer_data();
 	/** TESTPOINT: init timer via k_timer_init */
+	k_usleep(1); /* align to tick */
 	k_timer_start(&ktimer, K_MSEC(DURATION), K_MSEC(PERIOD));
 	tdata.timestamp = k_uptime_get();
 	busy_wait_ms(DURATION + PERIOD * EXPIRE_TIMES + PERIOD / 2);
@@ -609,14 +618,14 @@ void test_timer_remaining(void)
 	uint32_t slew_ticks;
 	uint64_t now;
 
-	k_usleep(1); /* align to tick */
 
 	init_timer_data();
+	k_usleep(1); /* align to tick */
 	k_timer_start(&remain_timer, K_MSEC(DURATION), K_NO_WAIT);
 	busy_wait_ms(DURATION / 2);
+	rem_ticks = k_timer_remaining_ticks(&remain_timer);
 	now = k_uptime_ticks();
 	rem_ms = k_timer_remaining_get(&remain_timer);
-	rem_ticks = k_timer_remaining_ticks(&remain_timer);
 	exp_ticks = k_timer_expires_ticks(&remain_timer);
 	k_timer_stop(&remain_timer);
 	TIMER_ASSERT(tdata.expire_cnt == 0, &remain_timer);

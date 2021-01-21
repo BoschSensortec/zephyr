@@ -1485,7 +1485,9 @@ static int wncm14a2a_init(const struct device *dev)
 	ictx.mdm_ctx.data_manufacturer = ictx.mdm_manufacturer;
 	ictx.mdm_ctx.data_model = ictx.mdm_model;
 	ictx.mdm_ctx.data_revision = ictx.mdm_revision;
+#ifdef CONFIG_MODEM_SIM_NUMBERS
 	ictx.mdm_ctx.data_imei = ictx.mdm_imei;
+#endif
 
 	ret = mdm_receiver_register(&ictx.mdm_ctx, MDM_UART_DEV_NAME,
 				    mdm_recv_buf, sizeof(mdm_recv_buf));
@@ -1652,13 +1654,15 @@ static int offload_connect(struct net_context *context,
 	 * AT@SOCKCONN timeout param has minimum value of 30 seconds and
 	 * maximum value of 360 seconds, otherwise an error is generated
 	 */
-	timeout_sec = MIN(360, MAX(timeout_sec, 30));
+	timeout_sec = CLAMP(timeout_sec, 30, 360);
 
 	snprintk(buf, sizeof(buf), "AT@SOCKCONN=%d,\"%s\",%d,%d",
 		 sock->socket_id, wncm14a2a_sprint_ip_addr(addr),
 		 dst_port, timeout_sec);
 	ret = send_at_cmd(sock, buf, MDM_CMD_CONN_TIMEOUT);
-	if (ret < 0) {
+	if (!ret) {
+		net_context_set_state(sock->context, NET_CONTEXT_CONNECTED);
+	} else {
 		LOG_ERR("AT@SOCKCONN ret:%d", ret);
 	}
 
@@ -1789,9 +1793,6 @@ static int offload_put(struct net_context *context)
 	/* clear last_socket_id */
 	ictx.last_socket_id = 0;
 
-	sock->context->connect_cb = NULL;
-	sock->context->recv_cb = NULL;
-	sock->context->send_cb = NULL;
 	socket_put(sock);
 	net_context_unref(context);
 	if (sock->type == SOCK_STREAM) {

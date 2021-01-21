@@ -1,6 +1,7 @@
 # Subsystem configuration options
 
 # Copyright (c) 2016-2017 Intel Corporation
+# Copyright (c) 2021 Nordic Semiconductor
 # SPDX-License-Identifier: Apache-2.0
 
 menu "Sub Systems and OS Services"
@@ -23,9 +24,13 @@ source "subsys/fb/Kconfig"
 
 source "subsys/fs/Kconfig"
 
+source "subsys/ipc/Kconfig"
+
 source "subsys/jwt/Kconfig"
 
 source "subsys/logging/Kconfig"
+
+source "subsys/lorawan/Kconfig"
 
 source "subsys/mgmt/Kconfig"
 

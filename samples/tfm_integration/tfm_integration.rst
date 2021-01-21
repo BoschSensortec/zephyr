@@ -63,12 +63,15 @@ The following Python modules are required when building TF-M binaries:
 * pyasn1
 * pyyaml
 * cbor>=1.0.0
+* imgtool>=1.6.0
+* jinja2
+* click
 
 You can install them via:
 
    .. code-block:: bash
 
-      $ pip3 install --user cryptography pyasn1 pyyaml cbor>=1.0.0
+      $ pip3 install --user cryptography pyasn1 pyyaml cbor>=1.0.0 imgtool>=1.6.0 jinja2 click
 
 They are used by TF-M's signing utility to prepare firmware images for
 validation by the bootloader.
@@ -93,6 +96,35 @@ For Windows-based systems, please make sure you have a copy of the utility
 available on your system path. See, for example:
 `SRecord for Windows <http://srecord.sourceforge.net/windows.html>`_
 
+Images Created by the TF-M Build
+================================
+
+The TF-M build system creates executable files:
+
+* tfm_s - the secure firmware
+* tfm_ns - a nonsecure app which is discarded in favor of the Zephyr app
+* bl2 - mcuboot, if enabled
+
+For each of these, it creates .bin, .hex, .elf, and .axf files.
+
+The TF-M build system also creates signed variants of tfm_s and tfm_ns, and a file which combines them:
+
+* tfm_s_signed
+* tfm_ns_signed
+* tfm_s_ns_signed
+
+For each of these, only .bin files are created.
+The Zephyr build system usually signs both tfm_s and the Zephyr app itself, see below.
+
+The 'tfm' target contains properties for all these paths.
+For example, the following will resolve to ``<path>/tfm_s.hex``:
+
+   .. code-block::
+
+      $<TARGET_PROPERTY:tfm,TFM_S_HEX_FILE>
+
+See the top level CMakeLists.txt file in the tfm module for an overview of all the properties.
+
 Signing Images
 ==============
 
@@ -106,7 +138,7 @@ images, and ``tfm/bl2/ext/mcuboot/root-rsa-3072_1.pem`` is used to sign
 non-secure images. Theses default .pem keys keys can be overridden using the
 ``CONFIG_TFM_KEY_FILE_S`` and ``CONFIG_TFM_KEY_FILE_NS`` values.
 
-The ``imgtool.py`` script from TF-M signs the TF-M + Zephyr binary using the
+The ``wrapper.py`` script from TF-M signs the TF-M + Zephyr binary using the
 .pem private key..
 
 To satisfy `PSA Certified Level 1`_ requirements, **You MUST replace

@@ -20,8 +20,6 @@
 extern "C" {
 #endif
 
-#define SHELL_RX_BUFF_SIZE 16
-
 #ifndef CONFIG_SHELL_CMD_BUFF_SIZE
 #define CONFIG_SHELL_CMD_BUFF_SIZE 0
 #endif
@@ -34,7 +32,7 @@ extern "C" {
 #define CONFIG_SHELL_HISTORY_BUFFER 0
 #endif
 
-#define SHELL_CMD_ROOT_LVL		(0u)
+#define Z_SHELL_CMD_ROOT_LVL		(0u)
 
 #define SHELL_HEXDUMP_BYTES_IN_LINE	16
 
@@ -139,6 +137,22 @@ const struct device *shell_device_lookup(size_t idx,
 typedef int (*shell_cmd_handler)(const struct shell *shell,
 				 size_t argc, char **argv);
 
+/**
+ * @brief Shell dictionary command handler prototype.
+ *
+ * @param shell Shell instance.
+ * @param argc  Arguments count.
+ * @param argv  Arguments.
+ * @param data  Pointer to the user data.
+ *
+ * @retval 0 Successful command execution.
+ * @retval 1 Help printed and command not executed.
+ * @retval -EINVAL Argument validation failed.
+ * @retval -ENOEXEC Command not executed.
+ */
+typedef int (*shell_dict_cmd_handler)(const struct shell *shell, size_t argc,
+				      char **argv, void *data);
+
 /*
  * @brief Shell static command descriptor.
  */
@@ -162,7 +176,7 @@ struct shell_static_entry {
  * @param[in] subcmd	Pointer to a subcommands array.
  * @param[in] help	Pointer to a command help string.
  * @param[in] handler	Pointer to a function handler.
- * @param[in] mandatory	Number of mandatory arguments.
+ * @param[in] mandatory	Number of mandatory arguments includig command name.
  * @param[in] optional	Number of optional arguments.
  */
 #define SHELL_CMD_ARG_REGISTER(syntax, subcmd, help, handler,		   \
@@ -194,7 +208,7 @@ struct shell_static_entry {
  * @param[in] subcmd	Pointer to a subcommands array.
  * @param[in] help	Pointer to a command help string.
  * @param[in] handler	Pointer to a function handler.
- * @param[in] mandatory	Number of mandatory arguments.
+ * @param[in] mandatory	Number of mandatory arguments includig command name.
  * @param[in] optional	Number of optional arguments.
  */
 #define SHELL_COND_CMD_ARG_REGISTER(flag, syntax, subcmd, help, handler, \
@@ -295,7 +309,7 @@ struct shell_static_entry {
  * @param[in] subcmd	 Pointer to a subcommands array.
  * @param[in] help	 Pointer to a command help string.
  * @param[in] handler	 Pointer to a function handler.
- * @param[in] mand	 Number of mandatory arguments.
+ * @param[in] mand	 Number of mandatory arguments includig command name.
  * @param[in] opt	 Number of optional arguments.
  */
 #define SHELL_CMD_ARG(syntax, subcmd, help, handler, mand, opt) \
@@ -317,7 +331,7 @@ struct shell_static_entry {
  * @param[in] subcmd	 Pointer to a subcommands array.
  * @param[in] help	 Pointer to a command help string.
  * @param[in] handler	 Pointer to a function handler.
- * @param[in] mand	 Number of mandatory arguments.
+ * @param[in] mand	 Number of mandatory arguments includig command name.
  * @param[in] opt	 Number of optional arguments.
  */
 #define SHELL_COND_CMD_ARG(flag, syntax, subcmd, help, handler, mand, opt) \
@@ -340,7 +354,7 @@ struct shell_static_entry {
  * @param[in] _subcmd	 Pointer to a subcommands array.
  * @param[in] _help	 Pointer to a command help string.
  * @param[in] _handler	 Pointer to a function handler.
- * @param[in] _mand	 Number of mandatory arguments.
+ * @param[in] _mand	 Number of mandatory arguments includig command name.
  * @param[in] _opt	 Number of optional arguments.
  */
 #define SHELL_EXPR_CMD_ARG(_expr, _syntax, _subcmd, _help, _handler, \
@@ -395,6 +409,58 @@ struct shell_static_entry {
  */
 #define SHELL_EXPR_CMD(_expr, _syntax, _subcmd, _help, _handler) \
 	SHELL_EXPR_CMD_ARG(_expr, _syntax, _subcmd, _help, _handler, 0, 0)
+
+/* Internal macro used for creating handlers for dictionary commands. */
+#define Z_SHELL_CMD_DICT_HANDLER_CREATE(_data, _handler)		\
+static int UTIL_CAT(cmd_dict_, GET_ARG_N(1, __DEBRACKET _data))(	\
+		const struct shell *shell, size_t argc, char **argv)	\
+{									\
+	return _handler(shell, argc, argv,				\
+			(void *)GET_ARG_N(2, __DEBRACKET _data));	\
+}
+
+/* Internal macro used for creating dictionary commands. */
+#define SHELL_CMD_DICT_CREATE(_data)					\
+	SHELL_CMD_ARG(GET_ARG_N(1, __DEBRACKET _data), NULL, NULL,	\
+		UTIL_CAT(cmd_dict_, GET_ARG_N(1, __DEBRACKET _data)), 1, 0)
+
+/**
+ * @brief Initializes shell dictionary commands.
+ *
+ * This is a special kind of static commands. Dictionary commands can be used
+ * every time you want to use a pair: (string <-> corresponding data) in
+ * a command handler. The string is usually a verbal description of a given
+ * data. The idea is to use the string as a command syntax that can be prompted
+ * by the shell and corresponding data can be used to process the command.
+ *
+ * @param[in] _name	Name of the dictionary subcommand set
+ * @param[in] _handler	Command handler common for all dictionary commands.
+ *			@see shell_dict_cmd_handler
+ * @param[in] ...	Dictionary pairs: (command_syntax, value). Value will be
+ *			passed to the _handler as user data.
+ *
+ * Example usage:
+ *	static int my_handler(const struct shell *shell,
+ *			      size_t argc, char **argv, void *data)
+ *	{
+ *		int val = (int)data;
+ *
+ *		shell_print(shell, "(syntax, value) : (%s, %d)", argv[0], val);
+ *		return 0;
+ *	}
+ *
+ *	SHELL_SUBCMD_DICT_SET_CREATE(sub_dict_cmds, my_handler,
+ *		(value_0, 0), (value_1, 1), (value_2, 2), (value_3, 3)
+ *	);
+ *	SHELL_CMD_REGISTER(dictionary, &sub_dict_cmds, NULL, NULL);
+ */
+#define SHELL_SUBCMD_DICT_SET_CREATE(_name, _handler, ...)		\
+	FOR_EACH_FIXED_ARG(Z_SHELL_CMD_DICT_HANDLER_CREATE, (),		\
+			   _handler, __VA_ARGS__)			\
+	SHELL_STATIC_SUBCMD_SET_CREATE(_name,				\
+		FOR_EACH(SHELL_CMD_DICT_CREATE, (,), __VA_ARGS__),	\
+		SHELL_SUBCMD_SET_END					\
+	)
 
 /**
  * @internal @brief Internal shell state in response to data received from the
@@ -523,11 +589,11 @@ struct shell_stats {
 };
 
 #ifdef CONFIG_SHELL_STATS
-#define SHELL_STATS_DEFINE(_name) static struct shell_stats _name##_stats
-#define SHELL_STATS_PTR(_name) (&(_name##_stats))
+#define Z_SHELL_STATS_DEFINE(_name) static struct shell_stats _name##_stats
+#define Z_SHELL_STATS_PTR(_name) (&(_name##_stats))
 #else
-#define SHELL_STATS_DEFINE(_name)
-#define SHELL_STATS_PTR(_name) NULL
+#define Z_SHELL_STATS_DEFINE(_name)
+#define Z_SHELL_STATS_PTR(_name) NULL
 #endif /* CONFIG_SHELL_STATS */
 
 /**
@@ -548,7 +614,6 @@ struct shell_flags {
 
 BUILD_ASSERT((sizeof(struct shell_flags) == sizeof(uint32_t)),
 	     "Structure must fit in 4 bytes");
-
 
 /**
  * @internal @brief Union for internal shell usage.
@@ -643,8 +708,8 @@ struct shell {
 	k_thread_stack_t *stack;
 };
 
-extern void shell_print_stream(const void *user_ctx, const char *data,
-			       size_t data_len);
+extern void z_shell_print_stream(const void *user_ctx, const char *data,
+				 size_t data_len);
 /**
  * @brief Macro for defining a shell instance.
  *
@@ -662,16 +727,16 @@ extern void shell_print_stream(const void *user_ctx, const char *data,
 		     _log_queue_size, _log_timeout, _shell_flag)	      \
 	static const struct shell _name;				      \
 	static struct shell_ctx UTIL_CAT(_name, _ctx);			      \
-	static uint8_t _name##_out_buffer[CONFIG_SHELL_PRINTF_BUFF_SIZE];	      \
-	SHELL_LOG_BACKEND_DEFINE(_name, _name##_out_buffer,		      \
+	static uint8_t _name##_out_buffer[CONFIG_SHELL_PRINTF_BUFF_SIZE];     \
+	Z_SHELL_LOG_BACKEND_DEFINE(_name, _name##_out_buffer,		      \
 				 CONFIG_SHELL_PRINTF_BUFF_SIZE,		      \
 				 _log_queue_size, _log_timeout);	      \
-	SHELL_HISTORY_DEFINE(_name##_history, CONFIG_SHELL_HISTORY_BUFFER);   \
-	SHELL_FPRINTF_DEFINE(_name##_fprintf, &_name, _name##_out_buffer,     \
+	Z_SHELL_HISTORY_DEFINE(_name##_history, CONFIG_SHELL_HISTORY_BUFFER); \
+	Z_SHELL_FPRINTF_DEFINE(_name##_fprintf, &_name, _name##_out_buffer,   \
 			     CONFIG_SHELL_PRINTF_BUFF_SIZE,		      \
-			     true, shell_print_stream);			      \
+			     true, z_shell_print_stream);		      \
 	LOG_INSTANCE_REGISTER(shell, _name, CONFIG_SHELL_LOG_LEVEL);	      \
-	SHELL_STATS_DEFINE(_name);					      \
+	Z_SHELL_STATS_DEFINE(_name);					      \
 	static K_KERNEL_STACK_DEFINE(_name##_stack, CONFIG_SHELL_STACK_SIZE); \
 	static struct k_thread _name##_thread;				      \
 	static const Z_STRUCT_SECTION_ITERABLE(shell, _name) = {	      \
@@ -682,8 +747,8 @@ extern void shell_print_stream(const void *user_ctx, const char *data,
 				&_name##_history : NULL,		      \
 		.shell_flag = _shell_flag,				      \
 		.fprintf_ctx = &_name##_fprintf,			      \
-		.stats = SHELL_STATS_PTR(_name),			      \
-		.log_backend = SHELL_LOG_BACKEND_PTR(_name),		      \
+		.stats = Z_SHELL_STATS_PTR(_name),			      \
+		.log_backend = Z_SHELL_LOG_BACKEND_PTR(_name),		      \
 		LOG_INSTANCE_PTR_INIT(log, shell, _name)		      \
 		.thread_name = STRINGIFY(_name),			      \
 		.thread = &_name##_thread,				      \
@@ -898,7 +963,7 @@ void shell_help(const struct shell *shell);
  * Pass command line to shell to execute.
  *
  * Note: This by no means makes any of the commands a stable interface, so
- * 	 this function should only be used for debugging/diagnostic.
+ *	 this function should only be used for debugging/diagnostic.
  *
  *	 This function must not be called from shell command context!
 

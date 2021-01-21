@@ -13,7 +13,6 @@ LOG_MODULE_REGISTER(adc_mchp_xec);
 #include <drivers/adc.h>
 #include <soc.h>
 #include <errno.h>
-#include <assert.h>
 
 #define ADC_CONTEXT_USES_KERNEL_TIMER
 #include "adc_context.h"
@@ -51,9 +50,6 @@ struct adc_xec_regs {
 
 #define ADC_XEC_REG_BASE						\
 	((struct adc_xec_regs *)(DT_INST_REG_ADDR(0)))
-
-
-DEVICE_DECLARE(adc_xec);
 
 static void adc_context_start_sampling(struct adc_context *ctx)
 {
@@ -297,7 +293,7 @@ static int adc_xec_init(const struct device *dev)
 
 	IRQ_CONNECT(DT_INST_IRQN(0),
 		    DT_INST_IRQ(0, priority),
-		    adc_xec_isr, DEVICE_GET(adc_xec), 0);
+		    adc_xec_isr, DEVICE_DT_INST_GET(0), 0);
 	irq_enable(DT_INST_IRQN(0));
 
 	adc_context_unlock_unconditionally(&data->ctx);
@@ -311,7 +307,7 @@ static struct adc_xec_data adc_xec_dev_data_0 = {
 	ADC_CONTEXT_INIT_SYNC(adc_xec_dev_data_0, ctx),
 };
 
-DEVICE_AND_API_INIT(adc_xec, DT_INST_LABEL(0),
-		    adc_xec_init, &adc_xec_dev_data_0, NULL,
+DEVICE_DT_INST_DEFINE(0, adc_xec_init, device_pm_control_nop,
+		    &adc_xec_dev_data_0, NULL,
 		    PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 		    &adc_xec_api);

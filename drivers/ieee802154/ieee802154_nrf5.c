@@ -42,6 +42,10 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include "ieee802154_nrf5.h"
 #include "nrf_802154.h"
 
+#ifdef CONFIG_NRF_802154_SER_HOST
+#include "nrf_802154_serialization_error.h"
+#endif
+
 struct nrf5_802154_config {
 	void (*irq_config_func)(const struct device *dev);
 };
@@ -52,6 +56,13 @@ static struct nrf5_802154_data nrf5_data;
 #define ACK_REQUEST_BIT (1 << 5)
 #define FRAME_PENDING_BYTE 1
 #define FRAME_PENDING_BIT (1 << 4)
+#define TXTIME_OFFSET_US  (5 * USEC_PER_MSEC)
+
+#if defined(CONFIG_SOC_NRF5340_CPUAPP) || defined(CONFIG_SOC_NRF5340_CPUNET)
+#define EUI64_ADDR (NRF_FICR->INFO.DEVICEID)
+#else
+#define EUI64_ADDR (NRF_FICR->DEVICEID)
+#endif
 
 /* Convenience defines for RADIO */
 #define NRF5_802154_DATA(dev) \
@@ -76,9 +87,14 @@ static void nrf5_get_eui64(uint8_t *mac)
 	mac[index++] = (IEEE802154_NRF5_VENDOR_OUI >> 8) & 0xff;
 	mac[index++] = IEEE802154_NRF5_VENDOR_OUI & 0xff;
 
+#if defined(CONFIG_SOC_NRF5340_CPUAPP) && \
+	defined(CONFIG_TRUSTED_EXECUTION_NONSECURE)
+#error Accessing EUI64 on the non-secure mode is not supported at the moment
+#else
 	/* Use device identifier assigned during the production. */
-	factoryAddress = (uint64_t)NRF_FICR->DEVICEID[0] << 32;
-	factoryAddress |= NRF_FICR->DEVICEID[1];
+	factoryAddress = (uint64_t)EUI64_ADDR[0] << 32;
+	factoryAddress |= EUI64_ADDR[1];
+#endif
 	memcpy(mac + index, &factoryAddress, sizeof(factoryAddress) - index);
 }
 
@@ -173,9 +189,18 @@ drop:
 
 static enum ieee802154_hw_caps nrf5_get_capabilities(const struct device *dev)
 {
-	return IEEE802154_HW_FCS | IEEE802154_HW_FILTER |
-	       IEEE802154_HW_CSMA | IEEE802154_HW_2_4_GHZ |
-	       IEEE802154_HW_TX_RX_ACK | IEEE802154_HW_ENERGY_SCAN |
+	return IEEE802154_HW_FCS |
+	       IEEE802154_HW_FILTER |
+#if !defined(CONFIG_NRF_802154_SL_OPENSOURCE) && \
+    !defined(CONFIG_NRF_802154_SER_HOST)
+	       IEEE802154_HW_CSMA |
+#ifdef CONFIG_IEEE802154_NRF5_PKT_TXTIME
+	       IEEE802154_HW_TXTIME |
+#endif /* CONFIG_IEEE802154_NRF5_PKT_TXTIME */
+#endif
+	       IEEE802154_HW_2_4_GHZ |
+	       IEEE802154_HW_TX_RX_ACK |
+	       IEEE802154_HW_ENERGY_SCAN |
 	       IEEE802154_HW_SLEEP_TO_TX;
 }
 
@@ -364,6 +389,24 @@ static void nrf5_tx_started(const struct device *dev,
 	}
 }
 
+#ifdef CONFIG_IEEE802154_NRF5_PKT_TXTIME
+static bool nrf5_tx_at(struct net_pkt *pkt, bool cca)
+{
+	uint32_t tx_at = net_pkt_txtime(pkt) / NSEC_PER_USEC;
+	bool ret;
+
+	ret = nrf_802154_transmit_raw_at(nrf5_data.tx_psdu,
+					 cca,
+					 tx_at - TXTIME_OFFSET_US,
+					 TXTIME_OFFSET_US,
+					 nrf_802154_channel_get());
+	if (nrf5_data.event_handler) {
+		LOG_WRN("TX_STARTED event will be triggered without delay");
+	}
+	return ret;
+}
+#endif /* CONFIG_IEEE802154_NRF5_PKT_TXTIME */
+
 static int nrf5_tx(const struct device *dev,
 		   enum ieee802154_tx_mode mode,
 		   struct net_pkt *pkt,
@@ -389,11 +432,20 @@ static int nrf5_tx(const struct device *dev,
 	case IEEE802154_TX_MODE_CCA:
 		ret = nrf_802154_transmit_raw(nrf5_radio->tx_psdu, true);
 		break;
+#if !defined(CONFIG_NRF_802154_SL_OPENSOURCE) && \
+    !defined(CONFIG_NRF_802154_SER_HOST)
 	case IEEE802154_TX_MODE_CSMA_CA:
 		nrf_802154_transmit_csma_ca_raw(nrf5_radio->tx_psdu);
 		break;
+#ifdef CONFIG_IEEE802154_NRF5_PKT_TXTIME
 	case IEEE802154_TX_MODE_TXTIME:
 	case IEEE802154_TX_MODE_TXTIME_CCA:
+		__ASSERT_NO_MSG(pkt);
+		ret = nrf5_tx_at(pkt,
+				 mode == IEEE802154_TX_MODE_TXTIME_CCA);
+		break;
+#endif /* CONFIG_IEEE802154_NRF5_PKT_TXTIME */
+#endif
 	default:
 		NET_ERR("TX mode %d not supported", mode);
 		return -ENOTSUP;
@@ -414,14 +466,25 @@ static int nrf5_tx(const struct device *dev,
 
 	LOG_DBG("Result: %d", nrf5_data.tx_result);
 
-	if (nrf5_radio->tx_result == NRF_802154_TX_ERROR_NONE) {
+	switch (nrf5_radio->tx_result) {
+	case NRF_802154_TX_ERROR_NONE:
 		if (nrf5_radio->ack_frame.psdu == NULL) {
 			/* No ACK was requested. */
 			return 0;
 		}
-
 		/* Handle ACK packet. */
 		return handle_ack(nrf5_radio);
+	case NRF_802154_TX_ERROR_NO_MEM:
+		return -ENOBUFS;
+	case NRF_802154_TX_ERROR_BUSY_CHANNEL:
+		return -EBUSY;
+	case NRF_802154_TX_ERROR_INVALID_ACK:
+	case NRF_802154_TX_ERROR_NO_ACK:
+		return -ENOMSG;
+	case NRF_802154_TX_ERROR_ABORTED:
+	case NRF_802154_TX_ERROR_TIMESLOT_DENIED:
+	case NRF_802154_TX_ERROR_TIMESLOT_ENDED:
+		return -EIO;
 	}
 
 	return -EIO;
@@ -619,7 +682,33 @@ void nrf_802154_received_timestamp_raw(uint8_t *data, int8_t power, uint8_t lqi,
 
 void nrf_802154_receive_failed(nrf_802154_rx_error_t error)
 {
+	enum ieee802154_rx_fail_reason reason;
+
+	switch (error) {
+	case NRF_802154_RX_ERROR_INVALID_FRAME:
+	case NRF_802154_RX_ERROR_DELAYED_TIMEOUT:
+		reason = IEEE802154_RX_FAIL_NOT_RECEIVED;
+		break;
+
+	case NRF_802154_RX_ERROR_INVALID_FCS:
+		reason = IEEE802154_RX_FAIL_INVALID_FCS;
+		break;
+
+	case NRF_802154_RX_ERROR_INVALID_DEST_ADDR:
+		reason = IEEE802154_RX_FAIL_ADDR_FILTERED;
+		break;
+
+	default:
+		reason = IEEE802154_RX_FAIL_OTHER;
+		break;
+	}
+
 	nrf5_data.last_frame_ack_fpb = false;
+	if (nrf5_data.event_handler) {
+		nrf5_data.event_handler(net_if_get_device(nrf5_data.iface),
+					IEEE802154_EVENT_RX_FAILED,
+					(void *)&reason);
+	}
 }
 
 void nrf_802154_tx_ack_started(const uint8_t *data)
@@ -691,6 +780,13 @@ void nrf_802154_energy_detection_failed(nrf_802154_ed_error_t error)
 	}
 }
 
+#ifdef CONFIG_NRF_802154_SER_HOST
+void nrf_802154_serialization_error(const nrf_802154_ser_err_data_t *p_err)
+{
+	__ASSERT(false, "802.15.4 serialization error");
+}
+#endif
+
 static const struct nrf5_802154_config nrf5_radio_cfg = {
 	.irq_config_func = nrf5_irq_config,
 };
@@ -727,8 +823,8 @@ NET_DEVICE_INIT(nrf5_154_radio, CONFIG_IEEE802154_NRF5_DRV_NAME,
 		&nrf5_radio_api, L2,
 		L2_CTX_TYPE, MTU);
 #else
-DEVICE_AND_API_INIT(nrf5_154_radio, CONFIG_IEEE802154_NRF5_DRV_NAME,
-		    nrf5_init, &nrf5_data, &nrf5_radio_cfg,
-		    POST_KERNEL, CONFIG_IEEE802154_NRF5_INIT_PRIO,
-		    &nrf5_radio_api);
+DEVICE_DEFINE(nrf5_154_radio, CONFIG_IEEE802154_NRF5_DRV_NAME,
+		nrf5_init, device_pm_control_nop, &nrf5_data, &nrf5_radio_cfg,
+		POST_KERNEL, CONFIG_IEEE802154_NRF5_INIT_PRIO,
+		&nrf5_radio_api);
 #endif

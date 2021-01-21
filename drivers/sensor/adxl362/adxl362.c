@@ -650,7 +650,7 @@ static int adxl362_chip_init(const struct device *dev)
 	adxl362_setup_activity_detection(dev,
 					 CONFIG_ADXL362_ABS_REF_MODE,
 					 CONFIG_ADXL362_ACTIVITY_THRESHOLD,
-					 1);
+					 CONFIG_ADXL362_ACTIVITY_TIME);
 	if (ret) {
 		return ret;
 	}
@@ -672,7 +672,7 @@ static int adxl362_chip_init(const struct device *dev)
 	adxl362_setup_inactivity_detection(dev,
 					   CONFIG_ADXL362_ABS_REF_MODE,
 					   CONFIG_ADXL362_INACTIVITY_THRESHOLD,
-					   1);
+					   CONFIG_ADXL362_INACTIVITY_TIME);
 	if (ret) {
 		return ret;
 	}
@@ -809,6 +809,6 @@ static const struct adxl362_config adxl362_config = {
 #endif
 };
 
-DEVICE_AND_API_INIT(adxl362, DT_INST_LABEL(0), adxl362_init,
+DEVICE_DT_INST_DEFINE(0, adxl362_init, device_pm_control_nop,
 		    &adxl362_data, &adxl362_config, POST_KERNEL,
 		    CONFIG_SENSOR_INIT_PRIORITY, &adxl362_api_funcs);

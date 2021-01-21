@@ -206,9 +206,11 @@ static bool lvgl_pointer_kscan_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
 		.state = LV_INDEV_STATE_REL,
 	};
 
-	if (k_msgq_get(&kscan_msgq, &curr, K_NO_WAIT) == 0) {
-		prev = curr;
+	if (k_msgq_get(&kscan_msgq, &curr, K_NO_WAIT) != 0) {
+		goto set_and_release;
 	}
+
+	prev = curr;
 
 	disp = lv_disp_get_default();
 	disp_dev = disp->driver.user_data;
@@ -225,11 +227,21 @@ static bool lvgl_pointer_kscan_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
 	}
 
 	if (IS_ENABLED(CONFIG_LVGL_POINTER_KSCAN_INVERT_X)) {
-		prev.point.x = cap.x_resolution - prev.point.x;
+		if (cap.current_orientation == DISPLAY_ORIENTATION_NORMAL ||
+		    cap.current_orientation == DISPLAY_ORIENTATION_ROTATED_180) {
+			prev.point.x = cap.x_resolution - prev.point.x;
+		} else {
+			prev.point.x = cap.y_resolution - prev.point.x;
+		}
 	}
 
 	if (IS_ENABLED(CONFIG_LVGL_POINTER_KSCAN_INVERT_Y)) {
-		prev.point.y = cap.y_resolution - prev.point.y;
+		if (cap.current_orientation == DISPLAY_ORIENTATION_NORMAL ||
+		    cap.current_orientation == DISPLAY_ORIENTATION_ROTATED_180) {
+			prev.point.y = cap.y_resolution - prev.point.y;
+		} else {
+			prev.point.y = cap.x_resolution - prev.point.y;
+		}
 	}
 
 	/* rotate touch point to match display rotation */
@@ -237,8 +249,8 @@ static bool lvgl_pointer_kscan_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
 		lv_coord_t x;
 
 		x = prev.point.x;
-		prev.point.x = cap.y_resolution - prev.point.y;
-		prev.point.y = x;
+		prev.point.x = prev.point.y;
+		prev.point.y = cap.y_resolution - x;
 	} else if (cap.current_orientation == DISPLAY_ORIENTATION_ROTATED_180) {
 		prev.point.x = cap.x_resolution - prev.point.x;
 		prev.point.y = cap.y_resolution - prev.point.y;
@@ -246,10 +258,11 @@ static bool lvgl_pointer_kscan_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
 		lv_coord_t x;
 
 		x = prev.point.x;
-		prev.point.x = prev.point.y;
-		prev.point.y = cap.x_resolution - x;
+		prev.point.x = cap.x_resolution - prev.point.y;
+		prev.point.y = x;
 	}
 
+set_and_release:
 	*data = prev;
 
 	return k_msgq_num_used_get(&kscan_msgq) > 0;

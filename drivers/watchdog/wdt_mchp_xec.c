@@ -15,7 +15,6 @@ LOG_MODULE_REGISTER(wdt_mchp_xec);
 #include <drivers/watchdog.h>
 #include <soc.h>
 #include <errno.h>
-#include <assert.h>
 
 #define WDT_XEC_REG_BASE						\
 	((WDT_Type *)(DT_INST_REG_ADDR(0)))
@@ -24,9 +23,6 @@ struct wdt_xec_data {
 	wdt_callback_t cb;
 	bool timeout_installed;
 };
-
-
-DEVICE_DECLARE(wdt_xec);
 
 static int wdt_xec_setup(const struct device *dev, uint8_t options)
 {
@@ -171,7 +167,7 @@ static int wdt_xec_init(const struct device *dev)
 
 	IRQ_CONNECT(DT_INST_IRQN(0),
 		    DT_INST_IRQ(0, priority),
-		    wdt_xec_isr, DEVICE_GET(wdt_xec), 0);
+		    wdt_xec_isr, DEVICE_DT_INST_GET(0), 0);
 	irq_enable(DT_INST_IRQN(0));
 
 	return 0;
@@ -179,7 +175,7 @@ static int wdt_xec_init(const struct device *dev)
 
 static struct wdt_xec_data wdt_xec_dev_data;
 
-DEVICE_AND_API_INIT(wdt_xec, DT_INST_LABEL(0),
-		    wdt_xec_init, &wdt_xec_dev_data, NULL,
+DEVICE_DT_INST_DEFINE(0, wdt_xec_init, device_pm_control_nop,
+		    &wdt_xec_dev_data, NULL,
 		    PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 		    &wdt_xec_api);

@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <init.h>
 #include <fs/fs.h>
+#include <fs/fs_sys.h>
 #include <sys/__assert.h>
 #include "test_fs.h"
 
@@ -249,6 +250,11 @@ static int temp_readdir(struct fs_dir_t *zdp, struct fs_dirent *entry)
 		entry->type = FS_DIR_ENTRY_FILE;
 		i++;
 		break;
+	case 3:
+		strcpy(entry->name, "..");
+		entry->type = FS_DIR_ENTRY_DIR;
+		i++;
+		break;
 	default:
 		strcpy(entry->name, "\0");
 		i = 0;
@@ -298,7 +304,9 @@ static int temp_mount(struct fs_mount_t *mountp)
 		return -EINVAL;
 	}
 
-	if (mountp->mnt_point[mountp->mountp_len - 1] != ':') {
+	size_t len = strlen(mountp->mnt_point);
+
+	if (mountp->mnt_point[len - 1] != ':') {
 		return -EINVAL;
 	}
 	mp[mountp->type] = mountp;

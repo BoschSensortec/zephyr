@@ -31,7 +31,7 @@ GEN_OFFSET_SYM(_cpu_t, irq_stack);
 GEN_OFFSET_SYM(_kernel_t, threads);
 #endif
 
-#ifdef CONFIG_SYS_POWER_MANAGEMENT
+#ifdef CONFIG_PM
 GEN_OFFSET_SYM(_kernel_t, idle);
 #endif
 
@@ -75,6 +75,10 @@ GEN_OFFSET_SYM(_thread_t, next_thread);
 
 #ifdef CONFIG_THREAD_CUSTOM_DATA
 GEN_OFFSET_SYM(_thread_t, custom_data);
+#endif
+
+#ifdef CONFIG_THREAD_LOCAL_STORAGE
+GEN_OFFSET_SYM(_thread_t, tls);
 #endif
 
 GEN_ABSOLUTE_SYM(K_THREAD_SIZEOF, sizeof(struct k_thread));

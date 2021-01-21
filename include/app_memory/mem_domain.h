@@ -12,10 +12,11 @@
 #include <stddef.h>
 #include <sys/dlist.h>
 #include <toolchain.h>
+#include <kernel/thread.h>
 
-/* Forward declaration */
-struct k_thread;
-typedef struct k_thread *k_tid_t;
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /**
  * @defgroup mem_domain_apis Memory domain APIs
@@ -23,7 +24,7 @@ typedef struct k_thread *k_tid_t;
  * @{
  */
 
-#ifdef CONFIG_MEMORY_PROTECTION
+#ifdef CONFIG_USERSPACE
 /**
  * @def K_MEM_PARTITION_DEFINE
  *
@@ -59,12 +60,7 @@ struct k_mem_partition {
 	/** attribute of memory partition */
 	k_mem_partition_attr_t attr;
 };
-#else
-/* To support use of IS_ENABLED for the APIs below */
-struct k_mem_partition;
-#endif /* CONFIG_MEMORY_PROTECTION */
 
-#ifdef CONFIG_USERSPACE
 /**
  * @brief Memory Domain
  *
@@ -82,15 +78,15 @@ struct k_mem_partition;
  * and read-only data.
  */
 struct k_mem_domain {
+#ifdef CONFIG_ARCH_MEM_DOMAIN_DATA
+	struct arch_mem_domain arch;
+#endif /* CONFIG_ARCH_MEM_DOMAIN_DATA */
 	/** partitions in the domain */
 	struct k_mem_partition partitions[CONFIG_MAX_DOMAIN_PARTITIONS];
 	/** Doubly linked list of member threads */
 	sys_dlist_t mem_domain_q;
 	/** number of active partitions in the domain */
 	uint8_t num_partitions;
-#ifdef CONFIG_ARCH_MEM_DOMAIN_DATA
-	struct arch_mem_domain arch;
-#endif /* CONFIG_ARCH_MEM_DOMAIN_DATA */
 };
 
 /**
@@ -107,6 +103,7 @@ extern struct k_mem_domain k_mem_domain_default;
 #else
 /* To support use of IS_ENABLED for the APIs below */
 struct k_mem_domain;
+struct k_mem_partition;
 #endif /* CONFIG_USERSPACE */
 
 /**
@@ -116,6 +113,9 @@ struct k_mem_domain;
  *
  * See documentation for k_mem_domain_add_partition() for details about
  * partition constraints.
+ *
+ * Do not call k_mem_domain_init() on the same memory domain more than once,
+ * doing so is undefined behavior.
  *
  * @param domain The memory domain to be initialized.
  * @param num_parts The number of array items of "parts" parameter.
@@ -127,7 +127,12 @@ extern void k_mem_domain_init(struct k_mem_domain *domain, uint8_t num_parts,
 /**
  * @brief Destroy a memory domain.
  *
- * Destroy a memory domain.
+ * Destroy a memory domain. All member threads will be re-assigned to the
+ * default memory domain.
+ *
+ * The default memory domain may not be destroyed.
+ *
+ * This API is deprecated and will be removed in Zephyr 2.5.
  *
  * @param domain The memory domain to be destroyed.
  */
@@ -140,8 +145,6 @@ extern void k_mem_domain_destroy(struct k_mem_domain *domain);
  * Add a memory partition into a memory domain. Partitions must conform to
  * the following constraints:
  *
- * - Partition bounds must be within system RAM boundaries on MMU-based
- *   systems.
  * - Partitions in the same memory domain may not overlap each other.
  * - Partitions must not be defined which expose private kernel
  *   data structures or kernel objects.
@@ -196,6 +199,10 @@ extern void k_mem_domain_add_thread(struct k_mem_domain *domain,
  */
 __deprecated
 extern void k_mem_domain_remove_thread(k_tid_t thread);
+
+#ifdef __cplusplus
+}
+#endif
 
 /** @} */
 #endif /* INCLUDE_APP_MEMORY_MEM_DOMAIN_H */

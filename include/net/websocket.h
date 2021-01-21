@@ -36,7 +36,7 @@ extern "C" {
 #define WEBSOCKET_FLAG_BINARY 0x00000004 /**< Binary data        */
 #define WEBSOCKET_FLAG_CLOSE  0x00000008 /**< Closing connection */
 #define WEBSOCKET_FLAG_PING   0x00000010 /**< Ping message       */
-#define WEBSOCKET_FLAG_PONG   0x00000011 /**< Pong message       */
+#define WEBSOCKET_FLAG_PONG   0x00000020 /**< Pong message       */
 
 enum websocket_opcode  {
 	WEBSOCKET_OPCODE_CONTINUE     = 0x00,
@@ -51,7 +51,7 @@ enum websocket_opcode  {
  * @typedef websocket_connect_cb_t
  * @brief Callback called after Websocket connection is established.
  *
- * @param sock Websocket id
+ * @param ws_sock Websocket id
  * @param req HTTP handshake request
  * @param user_data A valid pointer on some user data or NULL
  *

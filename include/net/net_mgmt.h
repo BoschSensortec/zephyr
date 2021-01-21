@@ -105,11 +105,10 @@ struct net_mgmt_event_callback;
 /**
  * @typedef net_mgmt_event_handler_t
  * @brief Define the user's callback handler function signature
- * @param "struct net_mgmt_event_callback *cb"
- *        Original struct net_mgmt_event_callback owning this handler.
- * @param "uint32_t mgmt_event" The network event being notified.
- * @param "struct net_if *iface" A pointer on a struct net_if to which the
- *        the event belongs to, if it's an event on an iface. NULL otherwise.
+ * @param cb Original struct net_mgmt_event_callback owning this handler.
+ * @param mgmt_event The network event being notified.
+ * @param iface A pointer on a struct net_if to which the the event belongs to,
+ *        if it's an event on an iface. NULL otherwise.
  */
 typedef void (*net_mgmt_event_handler_t)(struct net_mgmt_event_callback *cb,
 					 uint32_t mgmt_event,
@@ -152,7 +151,9 @@ struct net_mgmt_event_callback {
 		 * be called in case those events come.
 		 * Note that only the command part is treated as a mask,
 		 * matching one to several commands. Layer and layer code will
-		 * be made of an exact match.
+		 * be made of an exact match. This means that in order to
+		 * receive events from multiple layers, one must have multiple
+		 * listeners registered, one for each layer being listened.
 		 */
 		uint32_t event_mask;
 		/** Internal place holder when a synchronous event wait is
@@ -219,7 +220,7 @@ void net_mgmt_del_event_callback(struct net_mgmt_event_callback *cb);
  */
 #ifdef CONFIG_NET_MGMT_EVENT
 void net_mgmt_event_notify_with_info(uint32_t mgmt_event, struct net_if *iface,
-				     void *info, size_t length);
+				     const void *info, size_t length);
 
 static inline void net_mgmt_event_notify(uint32_t mgmt_event,
 					 struct net_if *iface)

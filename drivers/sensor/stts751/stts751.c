@@ -33,16 +33,16 @@ static int stts751_sample_fetch(const struct device *dev,
 				enum sensor_channel chan)
 {
 	struct stts751_data *data = dev->data;
-	union axis1bit16_t raw_temp;
+	int16_t raw_temp;
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL);
 
-	if (stts751_temperature_raw_get(data->ctx, &raw_temp.i16bit) < 0) {
+	if (stts751_temperature_raw_get(data->ctx, &raw_temp) < 0) {
 		LOG_DBG("Failed to read sample");
 		return -EIO;
 	}
 
-	data->sample_temp = raw_temp.i16bit;
+	data->sample_temp = raw_temp;
 
 	return 0;
 }
@@ -215,6 +215,6 @@ static const struct stts751_config stts751_config = {
 #endif
 };
 
-DEVICE_AND_API_INIT(stts751, DT_INST_LABEL(0), stts751_init,
+DEVICE_DT_INST_DEFINE(0, stts751_init, device_pm_control_nop,
 		    &stts751_data, &stts751_config, POST_KERNEL,
 		    CONFIG_SENSOR_INIT_PRIORITY, &stts751_api_funcs);

@@ -490,6 +490,13 @@ static void generate_mac(uint8_t mac_addr[6])
 {
 #if DT_INST_PROP(0, zephyr_random_mac_address)
 	gen_random_mac(mac_addr, SILABS_OUI_B0, SILABS_OUI_B1, SILABS_OUI_B2);
+#elif !NODE_HAS_VALID_MAC_ADDR(DT_DRV_INST(0))
+	mac_addr[0] = DEVINFO->EUI48H >> 8;
+	mac_addr[1] = DEVINFO->EUI48H >> 0;
+	mac_addr[2] = DEVINFO->EUI48L >> 24;
+	mac_addr[3] = DEVINFO->EUI48L >> 16;
+	mac_addr[4] = DEVINFO->EUI48L >> 8;
+	mac_addr[5] = DEVINFO->EUI48L >> 0;
 #endif
 }
 
@@ -629,13 +636,11 @@ static const struct ethernet_api eth_api = {
 	.send = eth_tx,
 };
 
-DEVICE_DECLARE(eth_gecko);
-
 static void eth0_irq_config(void)
 {
 	IRQ_CONNECT(DT_INST_IRQN(0),
 		    DT_INST_IRQ(0, priority), eth_isr,
-		    DEVICE_GET(eth_gecko), 0);
+		    DEVICE_DT_INST_GET(0), 0);
 	irq_enable(DT_INST_IRQN(0));
 }
 
@@ -662,6 +667,6 @@ static struct eth_gecko_dev_data eth0_data = {
 #endif
 };
 
-ETH_NET_DEVICE_INIT(eth_gecko, CONFIG_ETH_GECKO_NAME, eth_init,
+ETH_NET_DEVICE_DT_INST_DEFINE(0, eth_init,
 		    device_pm_control_nop, &eth0_data, &eth0_config,
 		    CONFIG_ETH_INIT_PRIORITY, &eth_api, ETH_GECKO_MTU);

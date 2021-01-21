@@ -5,6 +5,7 @@
  */
 #include <xtensa-asm2-s.h>
 #include <offsets.h>
+#include <toolchain.h>
 
 /*
  * xtensa_spill_reg_windows
@@ -145,14 +146,18 @@ _high_restore_done:
  * should test to be able to support hardware with less than 6 levels,
  * though...
  */
+
+#define RCTX_EPC_REG		_CONCAT(EPC, XCHAL_NUM_INTLEVELS)
+#define RCTX_EPS_REG		_CONCAT(EPS, XCHAL_NUM_INTLEVELS)
+
 .global _restore_context
 _restore_context:
 	call0 xtensa_restore_high_regs
 
 	l32i a0, a1, BSA_PC_OFF
-	wsr.EPC6 a0
+	wsr.RCTX_EPC_REG a0
 	l32i a0, a1, BSA_PS_OFF
-	wsr.EPS6 a0
+	wsr.RCTX_EPS_REG a0
 
 	l32i a0, a1, BSA_SAR_OFF
 	wsr.SAR a0
@@ -168,6 +173,10 @@ _restore_context:
 	l32i a0, a1, BSA_SCOMPARE1_OFF
 	wsr.SCOMPARE1 a0
 #endif
+#if XCHAL_HAVE_THREADPTR && defined(CONFIG_THREAD_LOCAL_STORAGE)
+	l32i a0, a1, BSA_THREADPTR_OFF
+	wur.THREADPTR a0
+#endif
 	rsync
 
 	l32i a0, a1, BSA_A0_OFF
@@ -175,7 +184,7 @@ _restore_context:
 	l32i a3, a1, BSA_A3_OFF
 	addi a1, a1, BASE_SAVE_AREA_SIZE
 
-	rfi 6
+	rfi XCHAL_NUM_INTLEVELS
 
 /*
  * void xtensa_switch(void *new, void **old_return);
@@ -210,6 +219,18 @@ xtensa_switch:
 	/* Now the high registers */
 	call0 xtensa_save_high_regs
 
+#ifdef CONFIG_KERNEL_COHERENCE
+	/* Flush the stack.  The top of stack was stored for us in
+	 * EXCSAVE3 (FIXME: shouldn't be hardcoded!) by arch_cohere_stacks().
+	 */
+	rsr.EXCSAVE3 a0
+	mov a3, a1
+flushloop:
+	dhwb a3, 0
+	addi a3, a3, XCHAL_DCACHE_LINESIZE
+	blt a3, a0, flushloop
+#endif
+
 	/* Restore the A3 argument we spilled earlier (via the base
 	 * save pointer pushed at the bottom of the stack) and set the
 	 * stack to the "new" context out of the A2 spill slot.
@@ -225,8 +246,8 @@ xtensa_switch:
 	 */
 	l32i a1, a2, BSA_A2_OFF
 
-#ifdef CONFIG_TRACING
-	call4 sys_trace_thread_switched_in
+#ifdef CONFIG_INSTRUMENT_THREAD_SWITCHING
+	call4 z_thread_mark_switched_in
 #endif
 	j _restore_context
 _switch_restore_pc:

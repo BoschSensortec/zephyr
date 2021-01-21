@@ -298,6 +298,12 @@ html_redirect_pages = [
     ('samples/samples', 'samples/index'),
     ('releases/release-notes', 'releases/index'),
     ('getting_started/getting_started', 'getting_started/index'),
+    ('guides/debugging/coredump', 'guides/flash_debug/coredump'),
+    ('guides/debugging/gdbstub', 'guides/flash_debug/gdbstub'),
+    ('guides/debugging/host-tools', 'guides/flash_debug/host-tools'),
+    ('guides/debugging/index', 'guides/flash_debug/index'),
+    ('guides/debugging/probes', 'guides/flash_debug/probes'),
+    ('guides/debugging/thread-analyzer', 'guides/flash_debug/thread-analyzer'),
     ('introduction/introducing_zephyr', 'introduction/index'),
     ('api/index', 'reference/index'),
     ('api/api', 'reference/index'),
@@ -521,6 +527,7 @@ breathe_domain_by_extension = {
     "c": "c",
 }
 breathe_separate_member_pages = True
+breathe_show_enumvalue_initializer = True
 
 # Qualifiers to a function are causing Sphihx/Breathe to warn about
 # Error when parsing function declaration and more.  This is a list
@@ -542,6 +549,7 @@ html_context = {
     'theme_logo_only': False,
     'current_version': version,
     'versions': (("latest", "/"),
+                 ("2.4.0", "/2.4.0/"),
                  ("2.3.0", "/2.3.0/"),
                  ("2.2.0", "/2.2.0/"),
                  ("2.1.0", "/2.1.0/"),

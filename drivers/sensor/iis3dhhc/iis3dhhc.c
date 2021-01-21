@@ -25,14 +25,14 @@ static int iis3dhhc_sample_fetch(const struct device *dev,
 				 enum sensor_channel chan)
 {
 	struct iis3dhhc_data *data = dev->data;
-	union axis3bit16_t raw_accel;
+	int16_t raw_accel[3];
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL);
 
-	iis3dhhc_acceleration_raw_get(data->ctx, raw_accel.u8bit);
-	data->acc[0] = sys_le16_to_cpu(raw_accel.i16bit[0]);
-	data->acc[1] = sys_le16_to_cpu(raw_accel.i16bit[1]);
-	data->acc[2] = sys_le16_to_cpu(raw_accel.i16bit[2]);
+	iis3dhhc_acceleration_raw_get(data->ctx, raw_accel);
+	data->acc[0] = sys_le16_to_cpu(raw_accel[0]);
+	data->acc[1] = sys_le16_to_cpu(raw_accel[1]);
+	data->acc[2] = sys_le16_to_cpu(raw_accel[2]);
 
 	return 0;
 }
@@ -253,6 +253,6 @@ static const struct iis3dhhc_config iis3dhhc_config = {
 #endif
 };
 
-DEVICE_AND_API_INIT(iis3dhhc, DT_INST_LABEL(0), iis3dhhc_init,
+DEVICE_DT_INST_DEFINE(0, iis3dhhc_init, device_pm_control_nop,
 		    &iis3dhhc_data, &iis3dhhc_config, POST_KERNEL,
 		    CONFIG_SENSOR_INIT_PRIORITY, &iis3dhhc_api_funcs);

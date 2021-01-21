@@ -16,6 +16,7 @@
 #include <kernel.h>
 #include <init.h>
 #include <soc.h>
+#include <stm32_ll_adc.h>
 
 #define ADC_CONTEXT_USES_KERNEL_TIMER
 #include "adc_context.h"
@@ -25,8 +26,10 @@
 LOG_MODULE_REGISTER(adc_stm32);
 
 #include <drivers/clock_control/stm32_clock_control.h>
+#include <pinmux/stm32/pinmux_stm32.h>
 
 #if !defined(CONFIG_SOC_SERIES_STM32F0X) && \
+	!defined(CONFIG_SOC_SERIES_STM32G0X) && \
 	!defined(CONFIG_SOC_SERIES_STM32L0X)
 #define RANK(n)		LL_ADC_REG_RANK_##n
 static const uint32_t table_rank[] = {
@@ -146,7 +149,8 @@ static const uint32_t table_samp_time[] = {
 	SMP_TIME(239, S_5),
 };
 #endif /* ADC5_V1_1 */
-#elif defined(CONFIG_SOC_SERIES_STM32L0X)
+#elif defined(CONFIG_SOC_SERIES_STM32L0X) || \
+	defined(CONFIG_SOC_SERIES_STM32G0X)
 static const uint16_t acq_time_tbl[8] = {2, 4, 8, 13, 20, 40, 80, 161};
 static const uint32_t table_samp_time[] = {
 	SMP_TIME(1,   _5),
@@ -209,18 +213,19 @@ struct adc_stm32_data {
 
 	uint8_t resolution;
 	uint8_t channel_count;
-#if defined(CONFIG_SOC_SERIES_STM32F0X) || defined(CONFIG_SOC_SERIES_STM32L0X)
+#if defined(CONFIG_SOC_SERIES_STM32F0X) || \
+	defined(CONFIG_SOC_SERIES_STM32G0X) || \
+	defined(CONFIG_SOC_SERIES_STM32L0X)
 	int8_t acq_time_index;
 #endif
 };
 
 struct adc_stm32_cfg {
 	ADC_TypeDef *base;
-
 	void (*irq_cfg_func)(void);
-
 	struct stm32_pclken pclken;
-	const struct device *p_dev;
+	const struct soc_gpio_pinctrl *pinctrl;
+	size_t pinctrl_len;
 };
 
 static int check_buffer_size(const struct adc_sequence *sequence,
@@ -255,6 +260,7 @@ static void adc_stm32_start_conversion(const struct device *dev)
 	defined(CONFIG_SOC_SERIES_STM32L0X) || \
 	defined(CONFIG_SOC_SERIES_STM32L4X) || \
 	defined(CONFIG_SOC_SERIES_STM32WBX) || \
+	defined(CONFIG_SOC_SERIES_STM32G0X) || \
 	defined(CONFIG_SOC_SERIES_STM32G4X) || \
 	defined(CONFIG_SOC_SERIES_STM32H7X)
 	LL_ADC_REG_StartConversion(adc);
@@ -331,6 +337,11 @@ static int start_read(const struct device *dev,
 #if defined(CONFIG_SOC_SERIES_STM32F0X) || \
 	defined(CONFIG_SOC_SERIES_STM32L0X)
 	LL_ADC_REG_SetSequencerChannels(adc, channel);
+#elif defined(CONFIG_SOC_SERIES_STM32G0X)
+	/* STM32G0 in "not fully configurable" sequencer mode */
+	LL_ADC_REG_SetSequencerChannels(adc, channel);
+	while (LL_ADC_IsActiveFlag_CCRDY(adc) == 0) {
+	}
 #else
 	LL_ADC_REG_SetSequencerRanks(adc, table_rank[0], channel);
 	LL_ADC_REG_SetSequencerLength(adc, table_seq_len[0]);
@@ -342,7 +353,21 @@ static int start_read(const struct device *dev,
 		return err;
 	}
 
-#if !defined(CONFIG_SOC_SERIES_STM32F1X)
+#if defined(CONFIG_SOC_SERIES_STM32G0X)
+	/*
+	 * Errata: Writing ADC_CFGR1 register while ADEN bit is set
+	 * resets RES[1:0] bitfield. We need to disable and enable adc.
+	 */
+	if (LL_ADC_IsEnabled(adc) == 1UL) {
+		LL_ADC_Disable(adc);
+	}
+	while (LL_ADC_IsEnabled(adc) == 1UL) {
+	}
+	LL_ADC_SetResolution(adc, resolution);
+	LL_ADC_Enable(adc);
+	while (LL_ADC_IsActiveFlag_ADRDY(adc) != 1UL) {
+	}
+#elif !defined(CONFIG_SOC_SERIES_STM32F1X)
 	LL_ADC_SetResolution(adc, resolution);
 #endif
 
@@ -351,6 +376,7 @@ static int start_read(const struct device *dev,
 	defined(CONFIG_SOC_SERIES_STM32L0X) || \
 	defined(CONFIG_SOC_SERIES_STM32L4X) || \
 	defined(CONFIG_SOC_SERIES_STM32WBX) || \
+	defined(CONFIG_SOC_SERIES_STM32G0X) || \
 	defined(CONFIG_SOC_SERIES_STM32G4X) || \
 	defined(CONFIG_SOC_SERIES_STM32H7X)
 	LL_ADC_EnableIT_EOC(adc);
@@ -456,6 +482,9 @@ static void adc_stm32_setup_speed(const struct device *dev, uint8_t id,
 #if defined(CONFIG_SOC_SERIES_STM32F0X) || defined(CONFIG_SOC_SERIES_STM32L0X)
 	LL_ADC_SetSamplingTimeCommonChannels(adc,
 		table_samp_time[acq_time_index]);
+#elif defined(CONFIG_SOC_SERIES_STM32G0X)
+	LL_ADC_SetSamplingTimeCommonChannels(adc, LL_ADC_SAMPLINGTIME_COMMON_1,
+		table_samp_time[acq_time_index]);
 #else
 	LL_ADC_SetChannelSamplingTime(adc,
 		__LL_ADC_DECIMAL_NB_TO_CHANNEL(id),
@@ -466,7 +495,9 @@ static void adc_stm32_setup_speed(const struct device *dev, uint8_t id,
 static int adc_stm32_channel_setup(const struct device *dev,
 				   const struct adc_channel_cfg *channel_cfg)
 {
-#if defined(CONFIG_SOC_SERIES_STM32F0X) || defined(CONFIG_SOC_SERIES_STM32L0X)
+#if defined(CONFIG_SOC_SERIES_STM32F0X) || \
+	defined(CONFIG_SOC_SERIES_STM32G0X) || \
+	 defined(CONFIG_SOC_SERIES_STM32L0X)
 	struct adc_stm32_data *data = dev->data;
 #endif
 	int acq_time_index;
@@ -481,7 +512,9 @@ static int adc_stm32_channel_setup(const struct device *dev,
 	if (acq_time_index < 0) {
 		return acq_time_index;
 	}
-#if defined(CONFIG_SOC_SERIES_STM32F0X) || defined(CONFIG_SOC_SERIES_STM32L0X)
+#if defined(CONFIG_SOC_SERIES_STM32F0X) || \
+	defined(CONFIG_SOC_SERIES_STM32G0X) || \
+	defined(CONFIG_SOC_SERIES_STM32L0X)
 	if (data->acq_time_index == -1) {
 		data->acq_time_index = acq_time_index;
 	} else {
@@ -532,6 +565,7 @@ static void adc_stm32_calib(const struct device *dev)
 	defined(CONFIG_SOC_SERIES_STM32G4X)
 	LL_ADC_StartCalibration(adc, LL_ADC_SINGLE_ENDED);
 #elif defined(CONFIG_SOC_SERIES_STM32F0X) || \
+	defined(CONFIG_SOC_SERIES_STM32G0X) || \
 	defined(CONFIG_SOC_SERIES_STM32L0X)
 	LL_ADC_StartCalibration(adc);
 #elif defined(CONFIG_SOC_SERIES_STM32H7X)
@@ -549,16 +583,20 @@ static int adc_stm32_init(const struct device *dev)
 	const struct device *clk =
 		device_get_binding(STM32_CLOCK_CONTROL_NAME);
 	ADC_TypeDef *adc = (ADC_TypeDef *)config->base;
+	int err;
 
 	LOG_DBG("Initializing....");
 
 	data->dev = dev;
-#if defined(CONFIG_SOC_SERIES_STM32F0X) || defined(CONFIG_SOC_SERIES_STM32L0X)
+#if defined(CONFIG_SOC_SERIES_STM32F0X) || \
+	defined(CONFIG_SOC_SERIES_STM32G0X) || \
+	defined(CONFIG_SOC_SERIES_STM32L0X)
 	/*
 	 * All conversion time for all channels on one ADC instance for F0 and
-	 * L0 series chips has to be the same. This additional variable is for
-	 * checking if the conversion time selection of all channels on one ADC
-	 * instance is the same.
+	 * L0 series chips has to be the same. For STM32G0 currently only one
+	 * of the two available common channel conversion times is used.
+	 * This additional variable is for checking if the conversion time
+	 * selection of all channels on one ADC instance is the same.
 	 */
 	data->acq_time_index = -1;
 #endif
@@ -566,6 +604,15 @@ static int adc_stm32_init(const struct device *dev)
 	if (clock_control_on(clk,
 		(clock_control_subsys_t *) &config->pclken) != 0) {
 		return -EIO;
+	}
+
+	/* Configure dt provided device signals when available */
+	err = stm32_dt_pinctrl_configure(config->pinctrl,
+					 config->pinctrl_len,
+					 (uint32_t)config->base);
+	if (err < 0) {
+		LOG_ERR("ADC pinctrl setup failed (%d)", err);
+		return err;
 	}
 
 #if defined(CONFIG_SOC_SERIES_STM32L4X) || \
@@ -580,12 +627,13 @@ static int adc_stm32_init(const struct device *dev)
 	LL_ADC_DisableDeepPowerDown(adc);
 #endif
 	/*
-	 * F3, L4, WB and G4 ADC modules need some time to be stabilized before
-	 * performing any enable or calibration actions.
+	 * F3, L4, WB, G0 and G4 ADC modules need some time
+	 * to be stabilized before performing any enable or calibration actions.
 	 */
 #if defined(CONFIG_SOC_SERIES_STM32F3X) || \
 	defined(CONFIG_SOC_SERIES_STM32L4X) || \
 	defined(CONFIG_SOC_SERIES_STM32WBX) || \
+	defined(CONFIG_SOC_SERIES_STM32G0X) || \
 	defined(CONFIG_SOC_SERIES_STM32G4X) || \
 	defined(CONFIG_SOC_SERIES_STM32H7X)
 	LL_ADC_EnableInternalRegulator(adc);
@@ -598,6 +646,7 @@ static int adc_stm32_init(const struct device *dev)
 #elif defined(CONFIG_SOC_SERIES_STM32F3X) || \
 	defined(CONFIG_SOC_SERIES_STM32L4X) || \
 	defined(CONFIG_SOC_SERIES_STM32WBX) || \
+	defined(CONFIG_SOC_SERIES_STM32G0X) || \
 	defined(CONFIG_SOC_SERIES_STM32G4X) || \
 	defined(CONFIG_SOC_SERIES_STM32H7X)
 	LL_ADC_SetCommonClock(__LL_ADC_COMMON_INSTANCE(adc),
@@ -623,6 +672,7 @@ static int adc_stm32_init(const struct device *dev)
 	defined(CONFIG_SOC_SERIES_STM32L0X) || \
 	defined(CONFIG_SOC_SERIES_STM32L4X) || \
 	defined(CONFIG_SOC_SERIES_STM32WBX) || \
+	defined(CONFIG_SOC_SERIES_STM32G0X) || \
 	defined(CONFIG_SOC_SERIES_STM32G4X) || \
 	defined(CONFIG_SOC_SERIES_STM32H7X)
 	if (LL_ADC_IsActiveFlag_ADRDY(adc)) {
@@ -642,6 +692,7 @@ static int adc_stm32_init(const struct device *dev)
 	defined(CONFIG_SOC_SERIES_STM32L0X) || \
 	defined(CONFIG_SOC_SERIES_STM32L4X) || \
 	defined(CONFIG_SOC_SERIES_STM32WBX) || \
+	defined(CONFIG_SOC_SERIES_STM32G0X) || \
 	defined(CONFIG_SOC_SERIES_STM32G4X) || \
 	defined(CONFIG_SOC_SERIES_STM32H7X)
 	/*
@@ -666,10 +717,11 @@ static int adc_stm32_init(const struct device *dev)
 
 #if defined(CONFIG_SOC_SERIES_STM32L4X) || \
 	defined(CONFIG_SOC_SERIES_STM32WBX) || \
+	defined(CONFIG_SOC_SERIES_STM32G0X) || \
 	defined(CONFIG_SOC_SERIES_STM32G4X) || \
 	defined(CONFIG_SOC_SERIES_STM32H7X)
 	/*
-	 * Enabling ADC modules in L4, WB and G4 series may fail if they are
+	 * Enabling ADC modules in L4, WB, G0 and G4 series may fail if they are
 	 * still not stabilized, this will wait for a short time to ensure ADC
 	 * modules are properly enabled.
 	 */
@@ -710,13 +762,18 @@ static const struct adc_driver_api api_stm32_driver_api = {
 									\
 static void adc_stm32_cfg_func_##index(void);				\
 									\
+static const struct soc_gpio_pinctrl adc_pins_##index[] =		\
+	ST_STM32_DT_INST_PINCTRL(index, 0);				\
+									\
 static const struct adc_stm32_cfg adc_stm32_cfg_##index = {		\
-	.base = (ADC_TypeDef *)DT_INST_REG_ADDR(index),\
+	.base = (ADC_TypeDef *)DT_INST_REG_ADDR(index),			\
 	.irq_cfg_func = adc_stm32_cfg_func_##index,			\
 	.pclken = {							\
-		.enr = DT_INST_CLOCKS_CELL(index, bits),	\
-		.bus = DT_INST_CLOCKS_CELL(index, bus),	\
+		.enr = DT_INST_CLOCKS_CELL(index, bits),		\
+		.bus = DT_INST_CLOCKS_CELL(index, bus),			\
 	},								\
+	.pinctrl = adc_pins_##index,					\
+	.pinctrl_len = ARRAY_SIZE(adc_pins_##index),			\
 };									\
 static struct adc_stm32_data adc_stm32_data_##index = {			\
 	ADC_CONTEXT_INIT_TIMER(adc_stm32_data_##index, ctx),		\
@@ -724,18 +781,18 @@ static struct adc_stm32_data adc_stm32_data_##index = {			\
 	ADC_CONTEXT_INIT_SYNC(adc_stm32_data_##index, ctx),		\
 };									\
 									\
-DEVICE_AND_API_INIT(adc_##index, DT_INST_LABEL(index),	\
-		    &adc_stm32_init,					\
+DEVICE_DT_INST_DEFINE(index,						\
+		    &adc_stm32_init, device_pm_control_nop,		\
 		    &adc_stm32_data_##index, &adc_stm32_cfg_##index,	\
 		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,	\
 		    &api_stm32_driver_api);				\
 									\
 static void adc_stm32_cfg_func_##index(void)				\
 {									\
-	IRQ_CONNECT(DT_INST_IRQN(index),		\
-		    DT_INST_IRQ(index, priority),	\
-		    adc_stm32_isr, DEVICE_GET(adc_##index), 0);		\
-	irq_enable(DT_INST_IRQN(index));		\
+	IRQ_CONNECT(DT_INST_IRQN(index),				\
+		    DT_INST_IRQ(index, priority),			\
+		    adc_stm32_isr, DEVICE_DT_INST_GET(index), 0);	\
+	irq_enable(DT_INST_IRQN(index));				\
 }
 
 DT_INST_FOREACH_STATUS_OKAY(STM32_ADC_INIT)

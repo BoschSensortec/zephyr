@@ -20,7 +20,7 @@ struct spi_nrfx_data {
 	const struct device *dev;
 	size_t chunk_len;
 	bool   busy;
-#ifdef CONFIG_DEVICE_POWER_MANAGEMENT
+#ifdef CONFIG_PM_DEVICE
 	uint32_t pm_state;
 #endif
 #if (CONFIG_SPI_NRFX_RAM_BUFFER_SIZE > 0)
@@ -222,7 +222,7 @@ static int transceive(const struct device *dev,
 	struct spi_nrfx_data *dev_data = get_dev_data(dev);
 	int error;
 
-	spi_context_lock(&dev_data->ctx, asynchronous, signal);
+	spi_context_lock(&dev_data->ctx, asynchronous, signal, spi_cfg);
 
 	error = configure(dev, spi_cfg);
 	if (error == 0) {
@@ -318,15 +318,15 @@ static int init_spim(const struct device *dev)
 		return -EBUSY;
 	}
 
-#ifdef CONFIG_DEVICE_POWER_MANAGEMENT
+#ifdef CONFIG_PM_DEVICE
 	data->pm_state = DEVICE_PM_ACTIVE_STATE;
+	get_dev_data(dev)->pm_state = DEVICE_PM_ACTIVE_STATE;
 #endif
-	spi_context_unlock_unconditionally(&data->ctx);
 
 	return 0;
 }
 
-#ifdef CONFIG_DEVICE_POWER_MANAGEMENT
+#ifdef CONFIG_PM_DEVICE
 static int spim_nrfx_pm_control(const struct device *dev,
 				uint32_t ctrl_command,
 				void *context, device_pm_cb cb, void *arg)
@@ -372,7 +372,7 @@ static int spim_nrfx_pm_control(const struct device *dev,
 
 	return ret;
 }
-#endif /* CONFIG_DEVICE_POWER_MANAGEMENT */
+#endif /* CONFIG_PM_DEVICE */
 
 /*
  * We use NODELABEL here because the nrfx API requires us to call
@@ -412,7 +412,9 @@ static int spim_nrfx_pm_control(const struct device *dev,
 		IRQ_CONNECT(NRFX_IRQ_NUMBER_GET(NRF_SPIM##idx),		       \
 			    DT_IRQ(SPIM(idx), priority),		       \
 			    nrfx_isr, nrfx_spim_##idx##_irq_handler, 0);       \
-		return init_spim(dev);					       \
+		int err = init_spim(dev);				       \
+		spi_context_unlock_unconditionally(&get_dev_data(dev)->ctx);   \
+		return err;						       \
 	}								       \
 	static struct spi_nrfx_data spi_##idx##_data = {		       \
 		SPI_CONTEXT_INIT_LOCK(spi_##idx##_data, ctx),		       \
@@ -435,8 +437,7 @@ static int spim_nrfx_pm_control(const struct device *dev,
 			SPI_NRFX_SPIM_EXTENDED_CONFIG(idx)		       \
 		}							       \
 	};								       \
-	DEVICE_DEFINE(spi_##idx,					       \
-		      SPIM_PROP(idx, label),				       \
+	DEVICE_DT_DEFINE(SPIM(idx),					       \
 		      spi_##idx##_init,					       \
 		      spim_nrfx_pm_control,				       \
 		      &spi_##idx##_data,				       \

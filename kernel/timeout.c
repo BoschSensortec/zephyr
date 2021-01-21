@@ -66,14 +66,15 @@ static void remove_timeout(struct _timeout *t)
 
 static int32_t elapsed(void)
 {
-	return announce_remaining == 0 ? z_clock_elapsed() : 0;
+	return announce_remaining == 0 ? z_clock_elapsed() : 0U;
 }
 
 static int32_t next_timeout(void)
 {
 	struct _timeout *to = first();
 	int32_t ticks_elapsed = elapsed();
-	int32_t ret = to == NULL ? MAX_WAIT : MAX(0, to->dticks - ticks_elapsed);
+	int32_t ret = to == NULL ? MAX_WAIT
+		: CLAMP(to->dticks - ticks_elapsed, 0, MAX_WAIT);
 
 #ifdef CONFIG_TIMESLICING
 	if (_current_cpu->slice_ticks && _current_cpu->slice_ticks < ret) {
@@ -90,15 +91,15 @@ void z_add_timeout(struct _timeout *to, _timeout_func_t fn,
 		return;
 	}
 
-#ifdef CONFIG_LEGACY_TIMEOUT_API
-	k_ticks_t ticks = timeout;
-#else
+#ifdef KERNEL_COHERENCE
+	__ASSERT_NO_MSG(arch_mem_coherent(to));
+#endif
+
 	k_ticks_t ticks = timeout.ticks + 1;
 
 	if (IS_ENABLED(CONFIG_TIMEOUT_64BIT) && Z_TICK_ABS(ticks) >= 0) {
 		ticks = Z_TICK_ABS(ticks) - (curr_tick + elapsed());
 	}
-#endif
 
 	__ASSERT(!sys_dnode_is_linked(&to->node), "");
 	to->fn = fn;
@@ -142,7 +143,7 @@ int z_abort_timeout(struct _timeout *to)
 }
 
 /* must be locked */
-static k_ticks_t timeout_rem(struct _timeout *timeout)
+static k_ticks_t timeout_rem(const struct _timeout *timeout)
 {
 	k_ticks_t ticks = 0;
 
@@ -160,7 +161,7 @@ static k_ticks_t timeout_rem(struct _timeout *timeout)
 	return ticks - elapsed();
 }
 
-k_ticks_t z_timeout_remaining(struct _timeout *timeout)
+k_ticks_t z_timeout_remaining(const struct _timeout *timeout)
 {
 	k_ticks_t ticks = 0;
 
@@ -171,7 +172,7 @@ k_ticks_t z_timeout_remaining(struct _timeout *timeout)
 	return ticks;
 }
 
-k_ticks_t z_timeout_expires(struct _timeout *timeout)
+k_ticks_t z_timeout_expires(const struct _timeout *timeout)
 {
 	k_ticks_t ticks = 0;
 
@@ -299,14 +300,10 @@ uint64_t z_timeout_end_calc(k_timeout_t timeout)
 		return z_tick_get();
 	}
 
-#ifdef CONFIG_LEGACY_TIMEOUT_API
-	dt = k_ms_to_ticks_ceil32(timeout);
-#else
 	dt = timeout.ticks;
 
 	if (IS_ENABLED(CONFIG_TIMEOUT_64BIT) && Z_TICK_ABS(dt) >= 0) {
 		return Z_TICK_ABS(dt);
 	}
-#endif
 	return z_tick_get() + MAX(1, dt);
 }

@@ -109,11 +109,12 @@ static struct onoff_manager *get_onoff_manager(const struct device *dev,
 	return &data->mgr[type];
 }
 
-DEVICE_DECLARE(clock_nrf);
+
+#define CLOCK_DEVICE DEVICE_DT_GET(DT_NODELABEL(clock))
 
 struct onoff_manager *z_nrf_clock_control_get_onoff(clock_control_subsys_t sys)
 {
-	return get_onoff_manager(DEVICE_GET(clock_nrf),
+	return get_onoff_manager(CLOCK_DEVICE,
 				(enum clock_control_nrf_type)sys);
 }
 
@@ -155,7 +156,7 @@ static int set_starting_state(uint32_t *flags, uint32_t ctx)
 	} else if (current_ctx != ctx) {
 		err = -EPERM;
 	} else {
-		err = -EBUSY;
+		err = -EALREADY;
 	}
 
 	irq_unlock(key);
@@ -247,9 +248,21 @@ static void hfclk192m_stop(void)
 }
 #endif
 
+#if NRF_CLOCK_HAS_HFCLKAUDIO
+static void hfclkaudio_start(void)
+{
+	nrfx_clock_start(NRF_CLOCK_DOMAIN_HFCLKAUDIO);
+}
+
+static void hfclkaudio_stop(void)
+{
+	nrfx_clock_stop(NRF_CLOCK_DOMAIN_HFCLKAUDIO);
+}
+#endif
+
 static uint32_t *get_hf_flags(void)
 {
-	struct nrf_clock_control_data *data = DEVICE_GET(clock_nrf)->data;
+	struct nrf_clock_control_data *data = CLOCK_DEVICE->data;
 
 	return &data->subsys[CLOCK_CONTROL_NRF_TYPE_HFCLK].flags;
 }
@@ -276,7 +289,7 @@ static void generic_hfclk_start(void)
 
 	if (already_started) {
 		/* Clock already started by z_nrf_clock_bt_ctlr_hf_request */
-		clkstarted_handle(DEVICE_GET(clock_nrf),
+		clkstarted_handle(CLOCK_DEVICE,
 				  CLOCK_CONTROL_NRF_TYPE_HFCLK);
 		return;
 	}
@@ -339,9 +352,8 @@ static int api_stop(const struct device *dev, clock_control_subsys_t subsys)
 	return stop(dev, subsys, CTX_API);
 }
 
-static int async_start(const struct device *dev,
-			clock_control_subsys_t subsys,
-			struct clock_control_async_data *data, uint32_t ctx)
+static int async_start(const struct device *dev, clock_control_subsys_t subsys,
+			clock_control_cb_t cb, void *user_data, uint32_t ctx)
 {
 	enum clock_control_nrf_type type = (enum clock_control_nrf_type)subsys;
 	struct nrf_clock_control_sub_data *subdata = get_sub_data(dev, type);
@@ -352,8 +364,8 @@ static int async_start(const struct device *dev,
 		return err;
 	}
 
-	subdata->cb = data->cb;
-	subdata->user_data = data->user_data;
+	subdata->cb = cb;
+	subdata->user_data = user_data;
 
 	 get_sub_config(dev, type)->start();
 
@@ -361,9 +373,9 @@ static int async_start(const struct device *dev,
 }
 
 static int api_start(const struct device *dev, clock_control_subsys_t subsys,
-			     struct clock_control_async_data *data)
+		     clock_control_cb_t cb, void *user_data)
 {
-	return async_start(dev, subsys, data, CTX_API);
+	return async_start(dev, subsys, cb, user_data, CTX_API);
 }
 
 static void blocking_start_callback(const struct device *dev,
@@ -379,17 +391,13 @@ static int api_blocking_start(const struct device *dev,
 			      clock_control_subsys_t subsys)
 {
 	struct k_sem sem = Z_SEM_INITIALIZER(sem, 0, 1);
-	struct clock_control_async_data data = {
-		.cb = blocking_start_callback,
-		.user_data = &sem
-	};
 	int err;
 
 	if (!IS_ENABLED(CONFIG_MULTITHREADING)) {
 		return -ENOTSUP;
 	}
 
-	err = api_start(dev, subsys, &data);
+	err = api_start(dev, subsys, blocking_start_callback, &sem);
 	if (err < 0) {
 		return err;
 	}
@@ -399,7 +407,7 @@ static int api_blocking_start(const struct device *dev,
 
 static clock_control_subsys_t get_subsys(struct onoff_manager *mgr)
 {
-	struct nrf_clock_control_data *data = DEVICE_GET(clock_nrf)->data;
+	struct nrf_clock_control_data *data = CLOCK_DEVICE->data;
 	size_t offset = (size_t)(mgr - data->mgr);
 
 	return (clock_control_subsys_t)offset;
@@ -410,7 +418,7 @@ static void onoff_stop(struct onoff_manager *mgr,
 {
 	int res;
 
-	res = stop(DEVICE_GET(clock_nrf), get_subsys(mgr), CTX_ONOFF);
+	res = stop(CLOCK_DEVICE, get_subsys(mgr), CTX_ONOFF);
 	notify(mgr, res);
 }
 
@@ -428,19 +436,30 @@ static void onoff_started_callback(const struct device *dev,
 static void onoff_start(struct onoff_manager *mgr,
 			onoff_notify_fn notify)
 {
-	struct clock_control_async_data data = {
-		.cb = onoff_started_callback,
-		.user_data = notify
-	};
 	int err;
 
-	err = async_start(DEVICE_GET(clock_nrf), get_subsys(mgr),
-			  &data, CTX_ONOFF);
+	err = async_start(CLOCK_DEVICE, get_subsys(mgr),
+			  onoff_started_callback, notify, CTX_ONOFF);
 	if (err < 0) {
 		notify(mgr, err);
 	}
 }
 
+/** @brief Wait for LF clock availability or stability.
+ *
+ * If LF clock source is SYNTH or RC then there is no distinction between
+ * availability and stability. In case of XTAL source clock, system is initially
+ * starting RC and then seamlessly switches to XTAL. Running RC means clock
+ * availability and running target source means stability, That is because
+ * significant difference in startup time (<1ms vs >200ms).
+ *
+ * In order to get event/interrupt when RC is ready (allowing CPU sleeping) two
+ * stage startup sequence is used. Initially, LF source is set to RC and when
+ * LFSTARTED event is handled it is reconfigured to the target source clock.
+ * This approach is implemented in nrfx_clock driver and utilized here.
+ *
+ * @param mode Start mode.
+ */
 static void lfclk_spinwait(enum nrf_lfclk_start_mode mode)
 {
 	static const nrf_clock_domain_t d = NRF_CLOCK_DOMAIN_LFCLK;
@@ -454,6 +473,19 @@ static void lfclk_spinwait(enum nrf_lfclk_start_mode mode)
 		? NRF_CLOCK_LFCLK_Xtal
 		: CLOCK_CONTROL_NRF_K32SRC;
 	nrf_clock_lfclk_t type;
+
+	if ((mode == CLOCK_CONTROL_NRF_LF_START_AVAILABLE) &&
+	    (target_type == NRF_CLOCK_LFCLK_Xtal) &&
+	    (nrf_clock_lf_srccopy_get(NRF_CLOCK) == CLOCK_CONTROL_NRF_K32SRC)) {
+		/* If target clock source is using XTAL then due to two-stage
+		 * clock startup sequence, RC might already be running.
+		 * It can be determined by checking current LFCLK source. If it
+		 * is set to the target clock source then it means that RC was
+		 * started.
+		 */
+		return;
+	}
+
 	bool isr_mode = k_is_in_isr() || k_is_pre_kernel();
 	int key = isr_mode ? irq_lock() : 0;
 
@@ -509,7 +541,7 @@ void z_nrf_clock_control_lf_on(enum nrf_lfclk_start_mode start_mode)
 	if (atomic_set(&on, 1) == 0) {
 		int err;
 		struct onoff_manager *mgr =
-				get_onoff_manager(DEVICE_GET(clock_nrf),
+				get_onoff_manager(CLOCK_DEVICE,
 						  CLOCK_CONTROL_NRF_TYPE_LFCLK);
 
 		sys_notify_init_spinwait(&cli.notify);
@@ -538,7 +570,7 @@ void z_nrf_clock_control_lf_on(enum nrf_lfclk_start_mode start_mode)
 
 static void clock_event_handler(nrfx_clock_evt_type_t event)
 {
-	const struct device *dev = DEVICE_GET(clock_nrf);
+	const struct device *dev = CLOCK_DEVICE;
 
 	switch (event) {
 	case NRFX_CLOCK_EVT_HFCLK_STARTED:
@@ -555,6 +587,16 @@ static void clock_event_handler(nrfx_clock_evt_type_t event)
 
 		break;
 	}
+#if NRF_CLOCK_HAS_HFCLK192M
+	case NRFX_CLOCK_EVT_HFCLK192M_STARTED:
+		clkstarted_handle(dev, CLOCK_CONTROL_NRF_TYPE_HFCLK192M);
+		break;
+#endif
+#if NRF_CLOCK_HAS_HFCLKAUDIO
+	case NRFX_CLOCK_EVT_HFCLKAUDIO_STARTED:
+		clkstarted_handle(dev, CLOCK_CONTROL_NRF_TYPE_HFCLKAUDIO);
+		break;
+#endif
 	case NRFX_CLOCK_EVT_LFCLK_STARTED:
 		if (IS_ENABLED(
 			CONFIG_CLOCK_CONTROL_NRF_K32SRC_RC_CALIBRATION)) {
@@ -586,23 +628,6 @@ static int clk_init(const struct device *dev)
 		    nrfx_isr, nrfx_power_clock_irq_handler, 0);
 	irq_enable(DT_INST_IRQN(0));
 
-#if defined(CONFIG_SOC_NRF5340_CPUAPP) && \
-	!defined(CONFIG_TRUSTED_EXECUTION_NONSECURE)
-
-	#define PIN_XL1 0
-	#define PIN_XL2 1
-
-	bool ext_clk = IS_ENABLED(CONFIG_CLOCK_CONTROL_NRF_K32SRC_XTAL) ||
-		    IS_ENABLED(CONFIG_CLOCK_CONTROL_NRF_K32SRC_EXT_LOW_SWING) ||
-		    IS_ENABLED(CONFIG_CLOCK_CONTROL_NRF_K32SRC_EXT_FULL_SWING);
-
-	if (ext_clk) {
-		nrf_gpio_pin_mcu_select(PIN_XL1,
-					NRF_GPIO_PIN_MCUSEL_PERIPHERAL);
-		nrf_gpio_pin_mcu_select(PIN_XL2,
-					NRF_GPIO_PIN_MCUSEL_PERIPHERAL);
-	}
-#endif
 	nrfx_err = nrfx_clock_init(clock_event_handler);
 	if (nrfx_err != NRFX_SUCCESS) {
 		return -EIO;
@@ -661,13 +686,20 @@ static const struct nrf_clock_control_config config = {
 			IF_ENABLED(CONFIG_LOG, (.name = "hfclk192m",))
 		},
 #endif
+#if NRF_CLOCK_HAS_HFCLKAUDIO
+		[CLOCK_CONTROL_NRF_TYPE_HFCLKAUDIO] = {
+			.start = hfclkaudio_start,
+			.stop = hfclkaudio_stop,
+			IF_ENABLED(CONFIG_LOG, (.name = "hfclkaudio",))
+		},
+#endif
 	}
 };
 
-DEVICE_AND_API_INIT(clock_nrf, DT_INST_LABEL(0),
-		    clk_init, &data, &config, PRE_KERNEL_1,
-		    CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
-		    &clock_control_api);
+DEVICE_DT_DEFINE(DT_NODELABEL(clock), clk_init, device_pm_control_nop,
+		 &data, &config,
+		 PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
+		 &clock_control_api);
 
 static int cmd_status(const struct shell *shell, size_t argc, char **argv)
 {
@@ -675,10 +707,10 @@ static int cmd_status(const struct shell *shell, size_t argc, char **argv)
 	bool hf_status;
 	bool lf_status = nrfx_clock_is_running(NRF_CLOCK_DOMAIN_LFCLK, NULL);
 	struct onoff_manager *hf_mgr =
-				get_onoff_manager(DEVICE_GET(clock_nrf),
+				get_onoff_manager(CLOCK_DEVICE,
 						  CLOCK_CONTROL_NRF_TYPE_HFCLK);
 	struct onoff_manager *lf_mgr =
-				get_onoff_manager(DEVICE_GET(clock_nrf),
+				get_onoff_manager(CLOCK_DEVICE,
 						  CLOCK_CONTROL_NRF_TYPE_LFCLK);
 	uint32_t abs_start, abs_stop;
 	int key = irq_lock();

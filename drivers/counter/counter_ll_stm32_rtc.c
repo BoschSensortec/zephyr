@@ -18,7 +18,12 @@
 #include <sys/util.h>
 #include <kernel.h>
 #include <soc.h>
+#include <stm32_ll_exti.h>
+#include <stm32_ll_pwr.h>
+#include <stm32_ll_rcc.h>
+#include <stm32_ll_rtc.h>
 #include <drivers/counter.h>
+#include <sys/timeutil.h>
 
 #include <logging/log.h>
 
@@ -26,10 +31,13 @@
 
 LOG_MODULE_REGISTER(counter_rtc_stm32, CONFIG_COUNTER_LOG_LEVEL);
 
+/* Seconds from 1970-01-01T00:00:00 to 2000-01-01T00:00:00 */
 #define T_TIME_OFFSET 946684800
 
 #if defined(CONFIG_SOC_SERIES_STM32L4X)
 #define RTC_EXTI_LINE	LL_EXTI_LINE_18
+#elif defined(CONFIG_SOC_SERIES_STM32G0X)
+#define RTC_EXTI_LINE	LL_EXTI_LINE_19
 #elif defined(CONFIG_SOC_SERIES_STM32F4X) \
 	|| defined(CONFIG_SOC_SERIES_STM32F0X) \
 	|| defined(CONFIG_SOC_SERIES_STM32F2X) \
@@ -102,7 +110,7 @@ static uint32_t rtc_stm32_read(const struct device *dev)
 
 	/* Convert calendar datetime to UNIX timestamp */
 	/* RTC start time: 1st, Jan, 2000 */
-	/* time_t start:   1st, Jan, 1900 */
+	/* time_t start:   1st, Jan, 1970 */
 	now.tm_year = 100 +
 			__LL_RTC_CONVERT_BCD2BIN(__LL_RTC_GET_YEAR(rtc_date));
 	/* tm_mon allowed values are 0-11 */
@@ -113,7 +121,7 @@ static uint32_t rtc_stm32_read(const struct device *dev)
 	now.tm_min = __LL_RTC_CONVERT_BCD2BIN(__LL_RTC_GET_MINUTE(rtc_time));
 	now.tm_sec = __LL_RTC_CONVERT_BCD2BIN(__LL_RTC_GET_SECOND(rtc_time));
 
-	ts = mktime(&now);
+	ts = timeutil_timegm(&now);
 
 	/* Return number of seconds since RTC init */
 	ts -= T_TIME_OFFSET;
@@ -268,6 +276,8 @@ void rtc_stm32_isr(const struct device *dev)
 
 #if defined(CONFIG_SOC_SERIES_STM32H7X) && defined(CONFIG_CPU_CORTEX_M4)
 	LL_C2_EXTI_ClearFlag_0_31(RTC_EXTI_LINE);
+#elif defined(CONFIG_SOC_SERIES_STM32G0X)
+	LL_EXTI_ClearRisingFlag_0_31(RTC_EXTI_LINE);
 #else
 	LL_EXTI_ClearFlag_0_31(RTC_EXTI_LINE);
 #endif
@@ -332,6 +342,11 @@ static int rtc_stm32_init(const struct device *dev)
 	/* Wait until LSE is ready */
 	while (LL_RCC_LSE_IsReady() != 1) {
 	}
+
+#if defined(CONFIG_CLOCK_STM32_MSI_PLL_MODE)
+	/* Enable MSI hardware auto calibration */
+	LL_RCC_MSI_EnablePLLMode();
+#endif
 
 	LL_RCC_SetRTCClockSource(LL_RCC_RTC_CLKSOURCE_LSE);
 
@@ -408,7 +423,7 @@ static const struct counter_driver_api rtc_stm32_driver_api = {
 		.get_max_relative_alarm = rtc_stm32_get_max_relative_alarm,
 };
 
-DEVICE_AND_API_INIT(rtc_stm32, DT_INST_LABEL(0), &rtc_stm32_init,
+DEVICE_DT_INST_DEFINE(0, &rtc_stm32_init, device_pm_control_nop,
 		    &rtc_data, &rtc_config, PRE_KERNEL_1,
 		    CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &rtc_stm32_driver_api);
 
@@ -416,6 +431,6 @@ static void rtc_stm32_irq_config(const struct device *dev)
 {
 	IRQ_CONNECT(DT_INST_IRQN(0),
 		    DT_INST_IRQ(0, priority),
-		    rtc_stm32_isr, DEVICE_GET(rtc_stm32), 0);
+		    rtc_stm32_isr, DEVICE_DT_INST_GET(0), 0);
 	irq_enable(DT_INST_IRQN(0));
 }

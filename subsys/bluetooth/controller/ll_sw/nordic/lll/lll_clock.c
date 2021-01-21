@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/types.h>
 #include <soc.h>
 #include <device.h>
+
 #include <drivers/clock_control.h>
 #include <drivers/clock_control/nrf_clock_control.h>
 
@@ -18,6 +18,8 @@
 /* Clock setup timeouts are unlikely, below values are experimental */
 #define LFCLOCK_TIMEOUT_MS 500
 #define HFCLOCK_TIMEOUT_MS 2
+
+static uint16_t const sca_ppm_lut[] = {500, 250, 150, 100, 75, 50, 30, 20};
 
 struct lll_clock_state {
 	struct onoff_client cli;
@@ -64,10 +66,27 @@ int lll_clock_init(void)
 
 int lll_clock_wait(void)
 {
-	struct onoff_manager *mgr =
-		z_nrf_clock_control_get_onoff(CLOCK_CONTROL_NRF_SUBSYS_LF);
+	struct onoff_manager *mgr;
+	static bool done;
+	int err;
 
-	return blocking_on(mgr, LFCLOCK_TIMEOUT_MS);
+	if (done) {
+		return 0;
+	}
+	done = true;
+
+	mgr = z_nrf_clock_control_get_onoff(CLOCK_CONTROL_NRF_SUBSYS_LF);
+	err = blocking_on(mgr, LFCLOCK_TIMEOUT_MS);
+	if (err) {
+		return err;
+	}
+
+	err = onoff_release(mgr);
+	if (err != ONOFF_STATE_ON) {
+		return -EIO;
+	}
+
+	return 0;
 }
 
 int lll_hfclock_on(void)
@@ -112,4 +131,19 @@ int lll_hfclock_off(void)
 	DEBUG_RADIO_XTAL(0);
 
 	return 0;
+}
+
+uint8_t lll_clock_sca_local_get(void)
+{
+	return CLOCK_CONTROL_NRF_K32SRC_ACCURACY;
+}
+
+uint32_t lll_clock_ppm_local_get(void)
+{
+	return sca_ppm_lut[CLOCK_CONTROL_NRF_K32SRC_ACCURACY];
+}
+
+uint32_t lll_clock_ppm_get(uint8_t sca)
+{
+	return sca_ppm_lut[sca];
 }

@@ -29,7 +29,7 @@ SECTIONS
 	 * ... there is no 16-bit code yet, but there will be when we add SMP.
 	 */
 
-	.locore 0x8000 : ALIGN(16)
+	.locore : ALIGN(16)
 	{
 	_locore_start = .;
 	*(.locore)
@@ -72,7 +72,7 @@ SECTIONS
 
 	MMU_PAGE_ALIGN
 	_lodata_end = .;
-	}
+	} > LOCORE
 
 	_locore_size = _lorodata_start - _locore_start;
 	_lorodata_size = _lodata_start - _lorodata_start;
@@ -100,12 +100,14 @@ SECTIONS
 	_image_rodata_start = .;
 
 	#include <linker/common-rom.ld>
+	#include <linker/thread-local-storage.ld>
 
 	SECTION_PROLOGUE(_RODATA_SECTION_NAME,,ALIGN(16))
 	{
 	*(.rodata)
 	*(.rodata.*)
 
+	MMU_PAGE_ALIGN
 	#include <snippets-rodata.ld>
 
 #ifdef CONFIG_X86_MMU
@@ -139,6 +141,10 @@ SECTIONS
 	_app_smem_num_words = _app_smem_size >> 2;
 #endif /* CONFIG_USERSPACE */
 
+/* This should be put here before BSS section, otherwise the .bss.__gcov will
+ * be put in BSS section. That causes gcov not work properly */
+#include <snippets-ram-sections.ld>
+
 	SECTION_PROLOGUE(_BSS_SECTION_NAME, (NOLOAD), ALIGN(16))
 	{
 	MMU_PAGE_ALIGN
@@ -167,7 +173,6 @@ SECTIONS
 	#include <snippets-rwdata.ld>
 	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
 
-#include <snippets-ram-sections.ld>
 #include <linker/common-ram.ld>
 #include <linker/cplusplus-ram.ld>
 #include <arch/x86/pagetables.ld>

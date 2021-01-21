@@ -10,9 +10,11 @@
 #include <disk/disk_access.h>
 #include <drivers/clock_control.h>
 #include <drivers/clock_control/stm32_clock_control.h>
+#include <pinmux/stm32/pinmux_stm32.h>
 #include <drivers/gpio.h>
 #include <logging/log.h>
 #include <soc.h>
+#include <stm32_ll_rcc.h>
 
 LOG_MODULE_REGISTER(stm32_sdmmc);
 
@@ -34,6 +36,10 @@ struct stm32_sdmmc_priv {
 		int flags;
 	} pe;
 	struct stm32_pclken pclken;
+	struct {
+		const struct soc_gpio_pinctrl *list;
+		size_t len;
+	} pinctrl;
 };
 
 static int stm32_sdmmc_clock_enable(struct stm32_sdmmc_priv *priv)
@@ -357,6 +363,14 @@ static int disk_stm32_sdmmc_init(const struct device *dev)
 
 	k_work_init(&priv->work, stm32_sdmmc_cd_handler);
 
+	/* Configure dt provided device signals when available */
+	err = stm32_dt_pinctrl_configure(priv->pinctrl.list,
+					 priv->pinctrl.len,
+					 (uint32_t)priv->hsd.Instance);
+	if (err < 0) {
+		return err;
+	}
+
 	err = stm32_sdmmc_card_detect_init(priv);
 	if (err) {
 		return err;
@@ -388,6 +402,10 @@ err_card_detect:
 }
 
 #if DT_NODE_HAS_STATUS(DT_DRV_INST(0), okay)
+
+static const struct soc_gpio_pinctrl sdmmc_pins_1[] =
+						ST_STM32_DT_INST_PINCTRL(0, 0);
+
 static struct stm32_sdmmc_priv stm32_sdmmc_priv_1 = {
 	.hsd = {
 		.Instance = (SDMMC_TypeDef *)DT_INST_REG_ADDR(0),
@@ -410,10 +428,13 @@ static struct stm32_sdmmc_priv stm32_sdmmc_priv_1 = {
 		.bus = DT_INST_CLOCKS_CELL(0, bus),
 		.enr = DT_INST_CLOCKS_CELL(0, bits),
 	},
+	.pinctrl = {
+		.list = sdmmc_pins_1,
+		.len = ARRAY_SIZE(sdmmc_pins_1)
+	}
 };
 
-DEVICE_AND_API_INIT(stm32_sdmmc_dev1,
-		    DT_INST_LABEL(0), disk_stm32_sdmmc_init,
+DEVICE_DT_INST_DEFINE(0, disk_stm32_sdmmc_init, device_pm_control_nop,
 		    &stm32_sdmmc_priv_1, NULL, APPLICATION,
 		    CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 		    NULL);

@@ -110,6 +110,24 @@ static int mcux_ccm_get_subsys_rate(const struct device *dev,
 				10;
 		break;
 #endif
+
+#ifdef CONFIG_CAN_MCUX_FLEXCAN
+	case IMX_CCM_CAN_CLK:
+	{
+		uint32_t can_mux = CLOCK_GetMux(kCLOCK_CanMux);
+
+		if (can_mux == 0) {
+			*rate = CLOCK_GetPllFreq(kCLOCK_PllUsb1) / 8
+				/ (CLOCK_GetDiv(kCLOCK_CanDiv) + 1);
+		} else if  (can_mux == 1) {
+			*rate = CLOCK_GetOscFreq()
+				/ (CLOCK_GetDiv(kCLOCK_CanDiv) + 1);
+		} else {
+			*rate = CLOCK_GetPllFreq(kCLOCK_PllUsb1) / 6
+				/ (CLOCK_GetDiv(kCLOCK_CanDiv) + 1);
+		}
+	} break;
+#endif
 	}
 
 	return 0;
@@ -126,8 +144,9 @@ static const struct clock_control_driver_api mcux_ccm_driver_api = {
 	.get_rate = mcux_ccm_get_subsys_rate,
 };
 
-DEVICE_AND_API_INIT(mcux_ccm, DT_INST_LABEL(0),
+DEVICE_DT_INST_DEFINE(0,
 		    &mcux_ccm_init,
+		    device_pm_control_nop,
 		    NULL, NULL,
 		    PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 		    &mcux_ccm_driver_api);
